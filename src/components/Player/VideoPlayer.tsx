@@ -1,5 +1,9 @@
 import { useEffect, useRef, useMemo, forwardRef, useImperativeHandle } from 'react';
 import * as THREE from 'three';
+import Hls from 'hls.js';
+import type { DecoderMode } from '../../App';
+import { YUVParser } from '../../utils/yuvParser';
+import { yuvShaders } from '../../utils/yuvShaders';
 
 export interface VideoPlayerProps {
     videoRef: (node: HTMLVideoElement | null) => void;
@@ -14,6 +18,9 @@ export interface VideoPlayerProps {
     width?: number;
     height?: number;
     invertStereo?: boolean;
+    decoderMode: DecoderMode;
+    yuvMetadata?: { width: number, height: number, fps: number, pixelFormat: 'yuv420p' };
+    currentFile?: File | null;
 }
 
 export interface VideoPlayerHandle {
@@ -32,7 +39,10 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
     src,
     width = 16,
     height = 9,
-    invertStereo = false
+    invertStereo = false,
+    decoderMode,
+    yuvMetadata,
+    currentFile
 }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const sceneRef = useRef<THREE.Scene | null>(null);
@@ -52,6 +62,227 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
     const lastTimeRef = useRef(0);
 
     const internalVideoRef = useRef<HTMLVideoElement | null>(null);
+    const hlsRef = useRef<Hls | null>(null);
+
+    // YUV Decoder Refs
+    const yuvCanvasRef = useRef<HTMLCanvasElement | null>(null);
+    const yuvContextRef = useRef<WebGLRenderingContext | null>(null);
+    const yuvTexturesRef = useRef<{ y: WebGLTexture, u: WebGLTexture, v: WebGLTexture } | null>(null);
+    const yuvProgramRef = useRef<WebGLProgram | null>(null);
+    const yuvBufferRef = useRef<ArrayBuffer | null>(null);
+    const yuvParserRef = useRef<YUVParser | null>(null);
+    const yuvFrameRequestRef = useRef<number | null>(null);
+    const yuvCurrentFrameRef = useRef<number>(0);
+    const yuvLastFrameTimeRef = useRef<number>(0);
+
+    // YUV Decoder Logic
+    useEffect(() => {
+        if (decoderMode !== 'yuv' || !currentFile || !yuvMetadata) {
+            // Cleanup
+            if (yuvFrameRequestRef.current) {
+                cancelAnimationFrame(yuvFrameRequestRef.current);
+                yuvFrameRequestRef.current = null;
+            }
+            yuvBufferRef.current = null;
+            return;
+        }
+
+        const setupYUV = async () => {
+            // 1. Read file as ArrayBuffer
+            try {
+                const buffer = await currentFile.arrayBuffer();
+                yuvBufferRef.current = buffer;
+                yuvParserRef.current = new YUVParser(yuvMetadata);
+                yuvCurrentFrameRef.current = 0;
+                yuvLastFrameTimeRef.current = performance.now();
+            } catch (err) {
+                console.error('Error reading YUV file:', err);
+                return;
+            }
+
+            // 2. Setup Offscreen Canvas & WebGL
+            if (!yuvCanvasRef.current) {
+                yuvCanvasRef.current = document.createElement('canvas');
+            }
+            const canvas = yuvCanvasRef.current;
+            canvas.width = yuvMetadata.width;
+            canvas.height = yuvMetadata.height;
+
+            const gl = canvas.getContext('webgl', { preserveDrawingBuffer: true });
+            if (!gl) {
+                console.error('WebGL not supported for YUV decoder');
+                return;
+            }
+            yuvContextRef.current = gl;
+
+            // 3. Create WebGL Program
+            const createShader = (type: number, source: string) => {
+                const shader = gl.createShader(type)!;
+                gl.shaderSource(shader, source);
+                gl.compileShader(shader);
+                return shader;
+            };
+
+            const program = gl.createProgram()!;
+            gl.attachShader(program, createShader(gl.VERTEX_SHADER, yuvShaders.vertexShader));
+            gl.attachShader(program, createShader(gl.FRAGMENT_SHADER, yuvShaders.fragmentShader));
+            gl.linkProgram(program);
+            gl.useProgram(program);
+            yuvProgramRef.current = program;
+
+            // 4. Setup Buffers (Quad)
+            const positionBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]), gl.STATIC_DRAW);
+            const posAttrib = gl.getAttribLocation(program, 'position');
+            gl.enableVertexAttribArray(posAttrib);
+            gl.vertexAttribPointer(posAttrib, 2, gl.FLOAT, false, 0, 0);
+
+            const texCoordBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 0]), gl.STATIC_DRAW);
+            const uvAttrib = gl.getAttribLocation(program, 'uv');
+            gl.enableVertexAttribArray(uvAttrib);
+            gl.vertexAttribPointer(uvAttrib, 2, gl.FLOAT, false, 0, 0);
+
+            // 5. Create Textures
+            const createTexture = () => {
+                const tex = gl.createTexture()!;
+                gl.bindTexture(gl.TEXTURE_2D, tex);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+                return tex;
+            };
+
+            yuvTexturesRef.current = {
+                y: createTexture(),
+                u: createTexture(),
+                v: createTexture()
+            };
+
+            // 6. Playback Loop
+            const renderFrame = () => {
+                const now = performance.now();
+                const interval = 1000 / yuvMetadata.fps;
+
+                if (now - yuvLastFrameTimeRef.current >= interval) {
+                    const parser = yuvParserRef.current;
+                    const buffer = yuvBufferRef.current;
+
+                    if (parser && buffer) {
+                        const frame = parser.getFrame(buffer, yuvCurrentFrameRef.current);
+                        if (frame) {
+                            // Upload Y, U, V planes to textures
+                            gl.activeTexture(gl.TEXTURE0);
+                            gl.bindTexture(gl.TEXTURE_2D, yuvTexturesRef.current!.y);
+                            gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, yuvMetadata.width, yuvMetadata.height, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, frame.y);
+                            gl.uniform1i(gl.getUniformLocation(program, 'yTexture'), 0);
+
+                            gl.activeTexture(gl.TEXTURE1);
+                            gl.bindTexture(gl.TEXTURE_2D, yuvTexturesRef.current!.u);
+                            gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, yuvMetadata.width / 2, yuvMetadata.height / 2, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, frame.u);
+                            gl.uniform1i(gl.getUniformLocation(program, 'uTexture'), 1);
+
+                            gl.activeTexture(gl.TEXTURE2);
+                            gl.bindTexture(gl.TEXTURE_2D, yuvTexturesRef.current!.v);
+                            gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, yuvMetadata.width / 2, yuvMetadata.height / 2, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, frame.v);
+                            gl.uniform1i(gl.getUniformLocation(program, 'vTexture'), 2);
+
+                            gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+                            // Advance frame
+                            yuvCurrentFrameRef.current = (yuvCurrentFrameRef.current + 1) % parser.getTotalFrames(buffer);
+                        }
+                    }
+                    yuvLastFrameTimeRef.current = now;
+                }
+
+                yuvFrameRequestRef.current = requestAnimationFrame(renderFrame);
+            };
+
+            renderFrame();
+        };
+
+        setupYUV();
+
+        return () => {
+            if (yuvFrameRequestRef.current) {
+                cancelAnimationFrame(yuvFrameRequestRef.current);
+            }
+        };
+    }, [decoderMode, currentFile, yuvMetadata]);
+
+    // HLS.js Integration Effect
+    useEffect(() => {
+        const video = internalVideoRef.current;
+        if (!video || !src || decoderMode === 'yuv') return;
+
+        // Clean up existing hls instance
+        if (hlsRef.current) {
+            hlsRef.current.destroy();
+            hlsRef.current = null;
+        }
+
+        // Check if the source is an HLS stream or a regular video file
+        const isHlsStream = src.includes('.m3u8') || src.includes('m3u8');
+
+        if (decoderMode === 'hls' && Hls.isSupported()) {
+            if (isHlsStream) {
+                // Use HLS.js for HLS streams
+                const hls = new Hls({
+                    enableWorker: true,  // Enable software decoding
+                    lowLatencyMode: false,
+                    backBufferLength: 90,
+                });
+
+                hls.loadSource(src);
+                hls.attachMedia(video);
+
+                hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                    console.log('HLS.js: Manifest parsed, video ready');
+                });
+
+                hls.on(Hls.Events.ERROR, (_event, data) => {
+                    console.error('HLS.js error:', data);
+                    if (data.fatal) {
+                        switch (data.type) {
+                            case Hls.ErrorTypes.NETWORK_ERROR:
+                                console.error('Fatal network error, trying to recover');
+                                hls.startLoad();
+                                break;
+                            case Hls.ErrorTypes.MEDIA_ERROR:
+                                console.error('Fatal media error, trying to recover');
+                                hls.recoverMediaError();
+                                break;
+                            default:
+                                console.error('Fatal error, cannot recover');
+                                hls.destroy();
+                                break;
+                        }
+                    }
+                });
+
+                hlsRef.current = hls;
+            } else {
+                // For regular video files (MP4, WebM, etc.), use native playback with MSE
+                // This provides software decoding path through the browser's MSE implementation
+                console.log('HLS.js mode: Using native MSE for non-HLS video file');
+                // The video element will use its src attribute directly
+            }
+        } else {
+            // Use native HTML5 video (hardware decoding)
+            // The video element will use its src attribute directly
+        }
+
+        return () => {
+            if (hlsRef.current) {
+                hlsRef.current.destroy();
+                hlsRef.current = null;
+            }
+        };
+    }, [src, decoderMode]);
 
     // Expose resetView method
     useImperativeHandle(ref, () => ({
@@ -205,16 +436,27 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
     useEffect(() => {
         const video = internalVideoRef.current;
         const sphere = sphereRef.current;
-        if (!video || !sphere) return;
+        if (!sphere) return;
 
-        const videoTexture = new THREE.VideoTexture(video);
-        videoTexture.minFilter = THREE.LinearFilter;
-        videoTexture.magFilter = THREE.LinearFilter;
-        videoTexture.format = THREE.RGBAFormat;
+        let texture: THREE.Texture;
+
+        if (decoderMode === 'yuv' && yuvCanvasRef.current) {
+            texture = new THREE.CanvasTexture(yuvCanvasRef.current);
+            texture.minFilter = THREE.LinearFilter;
+            texture.magFilter = THREE.LinearFilter;
+            texture.format = THREE.RGBAFormat;
+        } else if (video) {
+            texture = new THREE.VideoTexture(video);
+            texture.minFilter = THREE.LinearFilter;
+            texture.magFilter = THREE.LinearFilter;
+            texture.format = THREE.RGBAFormat;
+        } else {
+            return;
+        }
 
         const material = new THREE.ShaderMaterial({
             uniforms: {
-                map: { value: videoTexture },
+                map: { value: texture },
                 isSBS: { value: isSBS ? 1.0 : 0.0 },
                 sbsFormat: { value: sbsFormat === 'horizontal' ? 0.0 : 1.0 },
                 invertStereo: { value: invertStereo ? 1.0 : 0.0 }
@@ -231,7 +473,28 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
         sphere.material = material;
         materialRef.current = material;
 
-    }, [isSBS, sbsFormat, invertStereo, shader]);
+        // Frame update loop for YUV texture (signals Three.js that the canvas changed)
+        let frameAnimId: number;
+        const onFrame = () => {
+            if (decoderMode === 'yuv' && texture instanceof THREE.CanvasTexture) {
+                texture.needsUpdate = true;
+            }
+            frameAnimId = requestAnimationFrame(onFrame);
+        };
+
+        if (decoderMode === 'yuv') {
+            onFrame();
+        }
+
+        return () => {
+            if (frameAnimId) cancelAnimationFrame(frameAnimId);
+            texture.dispose();
+            if (materialRef.current) {
+                materialRef.current.dispose();
+                materialRef.current = null;
+            }
+        };
+    }, [isSBS, sbsFormat, decoderMode, invertStereo, shader, yuvMetadata]);
 
     // Update Geometry based on ViewMode and Aspect Ratio
     useEffect(() => {
@@ -404,7 +667,12 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
                     videoRef(node);
                     internalVideoRef.current = node;
                 }}
-                src={src || undefined}
+                src={
+                    decoderMode === 'native' ||
+                        (decoderMode === 'hls' && src && !(src.includes('.m3u8') || src.includes('m3u8')))
+                        ? (src || undefined)
+                        : undefined
+                }
                 className="hidden"
                 playsInline
                 crossOrigin="anonymous"
