@@ -67,15 +67,15 @@ export function Controls({ videoPlayer, viewControls, currentVideo, onLock, onRe
     if (!currentVideo) return null;
 
     // Unified Button Styles
-    const buttonBaseClass = "flex items-center justify-center p-2 sm:p-2.5 rounded-lg transition-all duration-200 font-medium text-xs sm:text-sm flex-shrink-0";
+    const buttonBaseClass = "flex items-center justify-center p-2 sm:p-2.5 rounded-lg transition-all duration-200 font-medium text-xs sm:text-sm h-full grow";
     const buttonActive = "bg-blue-600 text-white shadow-lg shadow-blue-500/30 hover:bg-blue-500";
     const buttonInactive = "bg-white/10 text-white hover:bg-white/20 backdrop-blur-md";
 
     // Select Style
-    const selectClass = "p-2 sm:p-2.5 bg-white/10 rounded-lg text-xs sm:text-sm text-white border border-white/5 outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer backdrop-blur-md hover:bg-white/20 transition-all min-w-0 flex-shrink";
+    const selectClass = "p-2 sm:p-2.5 bg-white/10 rounded-lg text-xs sm:text-sm text-white border border-white/5 outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer backdrop-blur-md hover:bg-white/20 transition-all min-w-0 flex-shrink grow w-max block";
 
     return (
-        <div className="bg-black/60 backdrop-blur-xl p-4 space-y-4 mx-4 mb-6 rounded-2xl border border-white/10 shadow-2xl">
+        <div className="bg-black/40 backdrop-blur-sm p-2 space-y-2 m-4 rounded-2xl border border-white/10 shadow-2xl">
             {/* Video Title */}
             <div className="text-lg font-bold truncate text-white/90 drop-shadow-sm px-1">{currentVideo.name}</div>
 
@@ -94,12 +94,12 @@ export function Controls({ videoPlayer, viewControls, currentVideo, onLock, onRe
             </div>
 
             {/* Control Buttons - Top Row */}
-            <div className="flex items-center justify-between flex-wrap gap-3">
-                <div className="flex items-center space-x-3 overflow-x-auto no-scrollbar max-w-full">
+            <div className="flex items-center justify-between flex-wrap gap-2 w-full">
+                <div className="flex items-center gap-2 overflow-x-auto no-scrollbar w-full">
                     {/* Play/Pause */}
                     <button
                         onClick={togglePlay}
-                        className={`p-3 rounded-full transition-all duration-200 text-white shadow-lg flex-shrink-0 ${isPlaying
+                        className={`p-1.75 rounded-full transition-all duration-200 text-white shadow-lg flex-shrink-0 ${isPlaying
                             ? 'bg-blue-600 hover:bg-blue-500 shadow-blue-500/30'
                             : 'bg-white/10 hover:bg-white/20'}`}
                     >
@@ -151,13 +151,13 @@ export function Controls({ videoPlayer, viewControls, currentVideo, onLock, onRe
                         onChange={(e) => setViewMode(e.target.value as any)}
                         className={selectClass}
                     >
-                        <option value="360" className="bg-gray-800">🔄 360°</option>
-                        <option value="180" className="bg-gray-800">🌐 180°</option>
-                        <option value="flat" className="bg-gray-800">▦ Flat</option>
+                        <option value="360" className="bg-gray-800">🔄</option>
+                        <option value="180" className="bg-gray-800">🌐</option>
+                        <option value="flat" className="bg-gray-800">▦</option>
                     </select>
                 </div>
 
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center gap-2 flex-wrap justify-between">
                     {/* Recenter */}
                     <button
                         onClick={onRecenter}
