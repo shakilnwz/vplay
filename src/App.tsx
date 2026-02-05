@@ -3,14 +3,18 @@ import { Sidebar } from './components/UI/Sidebar';
 import { FloatingOverlay } from './components/UI/FloatingOverlay';
 import { Controls } from './components/UI/Controls';
 import { VideoPlayer } from './components/Player/VideoPlayer';
+import { YUVMetadataDialog } from './components/UI/YUVMetadataDialog';
 import type { VideoPlayerHandle } from './components/Player/VideoPlayer';
 import { useFileHandler } from './hooks/useFileHandler';
 import { useVideoPlayer } from './hooks/useVideoPlayer';
 import { useViewControls } from './hooks/useViewControls';
 import { useAutoHideUI } from './hooks/useAutoHideUI';
 
+export type DecoderMode = 'native' | 'hls' | 'yuv';
+
 function App() {
     const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [decoderMode, setDecoderMode] = useState<DecoderMode>('native');
 
     // Hooks
     const fileHandler = useFileHandler();
@@ -34,6 +38,8 @@ function App() {
 
     const [videoSrc, setVideoSrc] = useState<string | null>(null);
     const [isUiLocked, setIsUiLocked] = useState(false);
+    const [showYuvDialog, setShowYuvDialog] = useState(false);
+    const [yuvMetadata, setYuvMetadata] = useState<{ width: number, height: number, fps: number, pixelFormat: 'yuv420p' } | null>(null);
 
     // Ref to access VideoPlayer methods
     const videoPlayerRef = useRef<VideoPlayerHandle>(null);
@@ -41,11 +47,19 @@ function App() {
     // Create URL for video file
     useEffect(() => {
         if (currentVideo) {
-            const url = URL.createObjectURL(currentVideo);
-            setVideoSrc(url);
-            return () => URL.revokeObjectURL(url);
+            // Check if it's a YUV file
+            if (currentVideo.name.toLowerCase().endsWith('.yuv')) {
+                setDecoderMode('yuv');
+                setShowYuvDialog(true);
+            } else {
+                const url = URL.createObjectURL(currentVideo);
+                setVideoSrc(url);
+                return () => URL.revokeObjectURL(url);
+            }
         } else {
             setVideoSrc(null);
+            setYuvMetadata(null);
+            setShowYuvDialog(false);
         }
     }, [currentVideo]);
 
@@ -100,6 +114,8 @@ function App() {
             <Sidebar
                 isOpen={sidebarOpen && !isUiLocked}
                 fileHandler={fileHandler}
+                decoderMode={decoderMode}
+                setDecoderMode={setDecoderMode}
             />
 
             {/* Main Content */}
@@ -117,9 +133,28 @@ function App() {
                         isLoading={isLoadingVideo}
                         error={error}
                         onRetry={() => currentVideo && loadVideo(currentVideo)}
-                        width={videoMetadata.get(currentVideo?.name || '')?.width}
-                        height={videoMetadata.get(currentVideo?.name || '')?.height}
+                        width={videoMetadata.get(currentVideo?.name || '')?.width || yuvMetadata?.width}
+                        height={videoMetadata.get(currentVideo?.name || '')?.height || yuvMetadata?.height}
+                        decoderMode={decoderMode}
+                        yuvMetadata={yuvMetadata || undefined}
+                        currentFile={currentVideo}
                     />
+
+                    {showYuvDialog && currentVideo && (
+                        <YUVMetadataDialog
+                            filename={currentVideo.name}
+                            onSubmit={(metadata) => {
+                                setYuvMetadata(metadata);
+                                setShowYuvDialog(false);
+                                // For YUV, we read the file as array buffer later in VideoPlayer
+                                setVideoSrc('yuv-placeholder');
+                            }}
+                            onCancel={() => {
+                                setShowYuvDialog(false);
+                                // Optionally clear selection?
+                            }}
+                        />
+                    )}
 
                     {!currentVideo && (
                         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">

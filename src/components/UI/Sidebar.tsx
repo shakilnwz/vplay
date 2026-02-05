@@ -1,11 +1,14 @@
 import { useFileHandler } from '../../hooks/useFileHandler';
+import type { DecoderMode } from '../../App';
 
 interface SidebarProps {
     isOpen: boolean;
     fileHandler: ReturnType<typeof useFileHandler>;
+    decoderMode: DecoderMode;
+    setDecoderMode: (mode: DecoderMode) => void;
 }
 
-export function Sidebar({ isOpen, fileHandler }: SidebarProps) {
+export function Sidebar({ isOpen, fileHandler, decoderMode, setDecoderMode }: SidebarProps) {
     const {
         processedVideos,
         currentVideo,
@@ -66,6 +69,61 @@ export function Sidebar({ isOpen, fileHandler }: SidebarProps) {
                     <div className="text-sm truncate">{directoryPath}</div>
                 </div>
             )}
+
+            {/* Decoder Settings */}
+            <div className="mb-4 p-3 bg-gray-700 rounded-lg border border-gray-600">
+                <div className="text-xs text-gray-400 mb-2">Video Decoder</div>
+                <div className="flex gap-2">
+                    <button
+                        onClick={() => setDecoderMode('native')}
+                        className={`flex-1 p-2 rounded-lg text-sm font-medium transition ${decoderMode === 'native'
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
+                            }`}
+                    >
+                        <div className="flex items-center justify-center gap-1">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                            </svg>
+                            <span>Native (HW)</span>
+                        </div>
+                    </button>
+                    <button
+                        onClick={() => setDecoderMode('hls')}
+                        className={`flex-1 p-2 rounded-lg text-sm font-medium transition ${decoderMode === 'hls'
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
+                            }`}
+                    >
+                        <div className="flex items-center justify-center gap-1">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
+                            </svg>
+                            <span>HLS.js (SW)</span>
+                        </div>
+                    </button>
+                    <button
+                        onClick={() => setDecoderMode('yuv')}
+                        className={`flex-1 p-2 rounded-lg text-sm font-medium transition ${decoderMode === 'yuv'
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
+                            }`}
+                    >
+                        <div className="flex items-center justify-center gap-1">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.628.288a2 2 0 01-1.643.021l-4.65-2.097a2 2 0 00-2.515 2.15l.132.859a2 2 0 00.153.54l.526 1.183A2 2 0 004.8 19h12a2 2 0 004.8 19h12a2 2 0 001.385-.559l1.243-1.243a2 2 0 000-2.828z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 5V4a1 1 0 00-1-1h-1a1 1 0 00-1 1v1M7 5V4a1 1 0 00-1-1H5a1 1 0 00-1 1v1m12 0H4M5 5V4m1 1h10a1 1 0 001-1V4M7 5H6" />
+                            </svg>
+                            <span>YUV (GPU)</span>
+                        </div>
+                    </button>
+                </div>
+                <div className="text-xs text-gray-400 mt-2">
+                    {decoderMode === 'native' && '💡 Using hardware-accelerated decoder'}
+                    {decoderMode === 'hls' && '💡 Software decoder mode (HLS.js fallback)'}
+                    {decoderMode === 'yuv' && '💡 GPU-accelerated YUV decoder (for raw YUV files)'}
+                </div>
+            </div>
 
             {/* Alternative File Input */}
             <label className="block mb-4">
