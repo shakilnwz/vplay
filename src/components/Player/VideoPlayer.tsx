@@ -61,6 +61,10 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
     const initialRollRef = useRef(0);
     const lastTimeRef = useRef(0);
 
+    const gyroOffsetRef = useRef({ x: 0, y: 0, z: 0 });
+    const gyroBaseRef = useRef({ x: 0, y: 0, z: 0 });
+    const gyroInitializedRef = useRef(false);
+
     const internalVideoRef = useRef<HTMLVideoElement | null>(null);
     const hlsRef = useRef<Hls | null>(null);
 
@@ -351,9 +355,10 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
         );
         camera.position.set(0, 0, 0.1);
 
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance", });
         renderer.setSize(container.clientWidth, container.clientHeight);
         renderer.setPixelRatio(window.devicePixelRatio); // Quality Fix
+        // renderer.toneMapping = THREE.NoToneMapping;
         container.appendChild(renderer.domElement);
 
         const geometry = new THREE.SphereGeometry(500, 60, 40);
@@ -536,6 +541,9 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
         const handleMouseDown = (e: MouseEvent) => {
             isDraggingRef.current = true;
             previousMousePositionRef.current = { x: e.clientX, y: e.clientY };
+
+            gyroBaseRef.current = { ...targetRotationRef.current };
+            gyroInitializedRef.current = false;
         };
 
         const handleMouseMove = (e: MouseEvent) => {
@@ -568,6 +576,8 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
             if (e.touches.length === 1) {
                 isDraggingRef.current = true;
                 previousMousePositionRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+                gyroBaseRef.current = { ...targetRotationRef.current };
+                gyroInitializedRef.current = false;
             } else if (e.touches.length === 2) {
                 isDraggingRef.current = false; // Stop rotating via single finger logic
                 touchStartDistanceRef.current = getTouchDistance(e.touches[0], e.touches[1]);
@@ -614,7 +624,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
         };
 
         const handleOrientation = (event: DeviceOrientationEvent) => {
-            if (!gyroEnabled) return;
+            if (!gyroEnabled || isDraggingRef.current) return;
 
             const alpha = event.alpha ? THREE.MathUtils.degToRad(event.alpha) : 0; // Z
             const beta = event.beta ? THREE.MathUtils.degToRad(event.beta) : 0; // X
@@ -633,11 +643,29 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(({
             q.multiply(q0.setFromAxisAngle(zee, -orient));
 
             const newEuler = new THREE.Euler().setFromQuaternion(q, 'YXZ');
+            if (!gyroInitializedRef.current) {
+                gyroOffsetRef.current = {
+                    x: newEuler.x,
+                    y: newEuler.y,
+                    z: newEuler.z
+                };
+                gyroInitializedRef.current = true;
+                return;
+            }
 
-            // Update target refs for smoothing
-            targetRotationRef.current.x = newEuler.x;
-            targetRotationRef.current.y = newEuler.y;
-            targetRotationRef.current.z = newEuler.z;
+            // // Update target refs for smoothing
+            // targetRotationRef.current.x = newEuler.x;
+            // targetRotationRef.current.y = newEuler.y;
+            // targetRotationRef.current.z = newEuler.z;
+            // Gyro delta relative to start
+            const dx = newEuler.x - gyroOffsetRef.current.x;
+            const dy = newEuler.y - gyroOffsetRef.current.y;
+            const dz = newEuler.z - gyroOffsetRef.current.z;
+
+            // Apply gyro as an ADDITIVE offset
+            targetRotationRef.current.x = gyroBaseRef.current.x + dx;
+            targetRotationRef.current.y = gyroBaseRef.current.y + dy;
+            targetRotationRef.current.z = gyroBaseRef.current.z + dz;
         };
 
         container.addEventListener('mousedown', handleMouseDown);

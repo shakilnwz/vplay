@@ -36,7 +36,7 @@ export function Sidebar({ isOpen, fileHandler, decoderMode, setDecoderMode }: Si
 
     return (
         <div className={`${isOpen ? 'fixed inset-0 z-40 lg:static' : 'hidden'} lg:flex w-80 bg-gray-800 p-4 overflow-y-auto flex-col h-full border-r border-gray-700`}>
-            <h1 className="text-2xl font-bold mb-4">VR Player</h1>
+            <h1 className="text-2xl font-bold mb-4 w-full text-center">VR Player</h1>
 
             {/* Directory Picker */}
             <button

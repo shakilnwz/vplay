@@ -80,6 +80,10 @@ export function useViewControls() {
 
     // Request gyroscope permission (iOS 13+)
     const enableGyro = async () => {
+        if (gyroEnabled) {
+            setGyroEnabled(false);
+            return;
+        }
         if (typeof DeviceOrientationEvent !== 'undefined' &&
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             'requestPermission' in (DeviceOrientationEvent as any)) {
