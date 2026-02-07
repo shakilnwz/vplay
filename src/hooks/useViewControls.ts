@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { ref, watchEffect } from 'vue';
 
 export type ViewMode = 'flat' | '360' | '180' | 'fisheye';
 export type SBSFormat = 'horizontal' | 'vertical';
@@ -12,76 +12,52 @@ interface SavedSettings {
     invertStereo?: boolean;
 }
 
-export function useViewControls() {
-    // Initialize from localStorage
-    const [viewMode, setViewMode] = useState<ViewMode>(() => {
-        try {
-            const saved = localStorage.getItem(STORAGE_KEY);
-            if (saved) {
-                const parsed = JSON.parse(saved) as SavedSettings;
-                return parsed.viewMode || '180';
-            }
-        } catch (e) {
-            console.warn('Failed to load settings:', e);
+function getInitialSettings(): SavedSettings {
+    try {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (saved) {
+            return JSON.parse(saved) as SavedSettings;
         }
-        return '180'; // Default to 180
-    });
+    } catch (e) {
+        console.warn('Failed to load settings:', e);
+    }
+    return {
+        viewMode: '180',
+        isSBS: true,
+        sbsFormat: 'horizontal',
+        invertStereo: false
+    };
+}
 
-    const [isSBS, setIsSBS] = useState(() => {
-        try {
-            const saved = localStorage.getItem(STORAGE_KEY);
-            if (saved) {
-                const parsed = JSON.parse(saved) as SavedSettings;
-                return parsed.isSBS !== undefined ? parsed.isSBS : true;
-            }
-        } catch (e) { /* ignore */ }
-        return true;
-    });
+export function useViewControls() {
+    const initial = getInitialSettings();
 
-    const [sbsFormat, setSbsFormat] = useState<SBSFormat>(() => {
-        try {
-            const saved = localStorage.getItem(STORAGE_KEY);
-            if (saved) {
-                const parsed = JSON.parse(saved) as SavedSettings;
-                return parsed.sbsFormat || 'horizontal';
-            }
-        } catch (e) { /* ignore */ }
-        return 'horizontal';
-    });
-
-    const [invertStereo, setInvertStereo] = useState(() => {
-        try {
-            const saved = localStorage.getItem(STORAGE_KEY);
-            if (saved) {
-                const parsed = JSON.parse(saved) as SavedSettings;
-                return parsed.invertStereo || false;
-            }
-        } catch (e) { /* ignore */ }
-        return false;
-    });
-
-    const [gyroEnabled, setGyroEnabled] = useState(false);
-    const [orientationLocked, setOrientationLocked] = useState(false);
+    const viewMode = ref<ViewMode>(initial.viewMode);
+    const isSBS = ref(initial.isSBS);
+    const sbsFormat = ref<SBSFormat>(initial.sbsFormat);
+    const invertStereo = ref(initial.invertStereo || false);
+    const gyroEnabled = ref(false);
+    const orientationLocked = ref(false);
 
     // Persist settings whenever they change
-    useEffect(() => {
+    watchEffect(() => {
         const settings: SavedSettings = {
-            viewMode,
-            isSBS,
-            sbsFormat,
-            invertStereo
+            viewMode: viewMode.value,
+            isSBS: isSBS.value,
+            sbsFormat: sbsFormat.value,
+            invertStereo: invertStereo.value
         };
         try {
             localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
         } catch (e) {
             console.warn('Failed to save settings:', e);
         }
-    }, [viewMode, isSBS, sbsFormat, invertStereo]);
+    });
 
     // Request gyroscope permission (iOS 13+)
     const enableGyro = async () => {
-        if (gyroEnabled) {
-            setGyroEnabled(false);
+        if (gyroEnabled.value) {
+            gyroEnabled.value = false;
             return;
         }
         if (typeof DeviceOrientationEvent !== 'undefined' &&
@@ -91,14 +67,14 @@ export function useViewControls() {
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const permission = await (DeviceOrientationEvent as any).requestPermission();
                 if (permission === 'granted') {
-                    setGyroEnabled(true);
+                    gyroEnabled.value = true;
                 }
             } catch (error) {
                 console.error('Gyroscope permission denied:', error);
             }
         } else {
             // For devices that don't require permission
-            setGyroEnabled(true);
+            gyroEnabled.value = true;
         }
     };
 
@@ -106,14 +82,14 @@ export function useViewControls() {
     const toggleOrientationLock = async () => {
         if ('orientation' in screen) {
             try {
-                if (!orientationLocked) {
+                if (!orientationLocked.value) {
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     await (screen.orientation as any).lock('landscape');
-                    setOrientationLocked(true);
+                    orientationLocked.value = true;
                 } else {
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     await (screen.orientation as any).unlock();
-                    setOrientationLocked(false);
+                    orientationLocked.value = false;
                 }
             } catch (error) {
                 console.log('Orientation lock not supported or denied:', error);
@@ -125,13 +101,9 @@ export function useViewControls() {
 
     return {
         viewMode,
-        setViewMode,
         isSBS,
-        setIsSBS,
         sbsFormat,
-        setSbsFormat,
         invertStereo,
-        setInvertStereo,
         gyroEnabled,
         enableGyro,
         orientationLocked,

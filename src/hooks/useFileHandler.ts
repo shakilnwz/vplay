@@ -1,6 +1,5 @@
-import { useState } from 'react';
+import { ref, computed } from 'vue';
 
-// Types moved locally or imported if centralized later
 export interface VideoMetadata {
     duration: number;
     width: number;
@@ -8,20 +7,20 @@ export interface VideoMetadata {
 }
 
 export function useFileHandler() {
-    const [videos, setVideos] = useState<File[]>([]);
-    const [currentVideo, setCurrentVideo] = useState<File | null>(null);
-    const [directoryPath, setDirectoryPath] = useState('');
-    const [isScanning, setIsScanning] = useState(false);
-    const [sortOrder, setSortOrder] = useState('name');
-    const [sortDirection, setSortDirection] = useState('asc');
-    const [filterQuery, setFilterQuery] = useState('');
-    const [filterExtension, setFilterExtension] = useState('all');
-    const [videoMetadata, setVideoMetadata] = useState<Map<string, VideoMetadata>>(new Map());
-    const [isLoadingVideo, setIsLoadingVideo] = useState(false);
-    const [error, setError] = useState<string | null>(null);
+    const videos = ref<File[]>([]);
+    const currentVideo = ref<File | null>(null);
+    const directoryPath = ref('');
+    const isScanning = ref(false);
+    const sortOrder = ref('name');
+    const sortDirection = ref('asc');
+    const filterQuery = ref('');
+    const filterExtension = ref('all');
+    const videoMetadata = ref<Map<string, VideoMetadata>>(new Map());
+    const isLoadingVideo = ref(false);
+    const error = ref<string | null>(null);
 
     const extractVideoMetadata = async (file: File): Promise<VideoMetadata | null> => {
-        const cached = videoMetadata.get(file.name);
+        const cached = videoMetadata.value.get(file.name);
         if (cached) return cached;
 
         return new Promise((resolve) => {
@@ -33,7 +32,9 @@ export function useFileHandler() {
                     width: video.videoWidth,
                     height: video.videoHeight
                 };
-                setVideoMetadata(prev => new Map(prev.set(file.name, metadata)));
+                videoMetadata.value.set(file.name, metadata);
+                // Trigger reactivity for Map if needed, but in Vue 3 Map is reactive if ref'd
+                // videoMetadata.value = new Map(videoMetadata.value); 
                 URL.revokeObjectURL(video.src);
                 resolve(metadata);
             };
@@ -46,20 +47,21 @@ export function useFileHandler() {
     };
 
     const loadVideo = (file: File) => {
-        setError(null);
-        setIsLoadingVideo(true);
-        setCurrentVideo(file);
+        error.value = null;
+        isLoadingVideo.value = true;
+        currentVideo.value = file;
         extractVideoMetadata(file);
     };
 
-    const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
-        const files = Array.from(event.target.files || []);
+    const handleFileSelect = async (event: Event) => {
+        const target = event.target as HTMLInputElement;
+        const files = Array.from(target.files || []);
         const videoFiles = files.filter((file: File) =>
             file.type.startsWith('video/') ||
             file.name.match(/\.(mp4|webm|ogv|mov|mkv|avi|m4v|flv|wmv)$/i)
         );
-        setVideos(videoFiles);
-        if (videoFiles.length > 0 && !currentVideo) {
+        videos.value = videoFiles;
+        if (videoFiles.length > 0 && !currentVideo.value) {
             loadVideo(videoFiles[0]);
         }
     };
@@ -69,7 +71,7 @@ export function useFileHandler() {
             try {
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const directoryHandle = await (window as any).showDirectoryPicker();
-                setIsScanning(true);
+                isScanning.value = true;
                 const videoFiles: File[] = [];
 
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -86,25 +88,38 @@ export function useFileHandler() {
                     }
                 }
 
-                setVideos(videoFiles);
-                setDirectoryPath(directoryHandle.name);
-                if (videoFiles.length > 0 && !currentVideo) {
+                videos.value = videoFiles;
+                directoryPath.value = directoryHandle.name;
+                if (videoFiles.length > 0 && !currentVideo.value) {
                     loadVideo(videoFiles[0]);
                 }
-            } catch (error) {
-                console.error('Directory picker error:', error);
+            } catch (err) {
+                console.error('Directory picker error:', err);
             } finally {
-                setIsScanning(false);
+                isScanning.value = false;
             }
         } else {
             alert('Your browser does not support the File System Access API. Please use Chrome or Edge, or use the file input below.');
         }
     };
 
-    const sortVideos = (videoList: File[]): File[] => {
-        return [...videoList].sort((a, b) => {
+    const processedVideos = computed(() => {
+        let result = [...videos.value];
+
+        // Filter
+        if (filterQuery.value) {
+            const query = filterQuery.value.toLowerCase();
+            result = result.filter(file => file.name.toLowerCase().includes(query));
+        }
+
+        if (filterExtension.value !== 'all') {
+            result = result.filter(file => file.name.toLowerCase().endsWith(`.${filterExtension.value.toLowerCase()}`));
+        }
+
+        // Sort
+        result.sort((a, b) => {
             let comparison = 0;
-            switch (sortOrder) {
+            switch (sortOrder.value) {
                 case 'name':
                     comparison = a.name.localeCompare(b.name);
                     break;
@@ -115,39 +130,23 @@ export function useFileHandler() {
                     comparison = (a.lastModified || 0) - (b.lastModified || 0);
                     break;
                 case 'duration': {
-                    const metaA = videoMetadata.get(a.name);
-                    const metaB = videoMetadata.get(b.name);
+                    const metaA = videoMetadata.value.get(a.name);
+                    const metaB = videoMetadata.value.get(b.name);
                     comparison = (metaA?.duration || 0) - (metaB?.duration || 0);
                     break;
                 }
                 default:
                     comparison = 0;
             }
-            return sortDirection === 'asc' ? comparison : -comparison;
+            return sortDirection.value === 'asc' ? comparison : -comparison;
         });
-    };
 
-    const filterVideos = (videoList: File[]): File[] => {
-        let filtered = videoList;
-
-        if (filterQuery) {
-            const query = filterQuery.toLowerCase();
-            filtered = filtered.filter(file => file.name.toLowerCase().includes(query));
-        }
-
-        if (filterExtension !== 'all') {
-            filtered = filtered.filter(file => file.name.toLowerCase().endsWith(`.${filterExtension.toLowerCase()}`));
-        }
-
-        return filtered;
-    };
-
-    // Derived state
-    const processedVideos = filterVideos(sortVideos(videos));
+        return result;
+    });
 
     return {
         videos,
-        processedVideos, // Export the processed list directly
+        processedVideos,
         currentVideo,
         directoryPath,
         isScanning,
@@ -158,12 +157,6 @@ export function useFileHandler() {
         videoMetadata,
         isLoadingVideo,
         error,
-        setSortOrder,
-        setSortDirection,
-        setFilterQuery,
-        setFilterExtension,
-        setIsLoadingVideo,
-        setError,
         handleFileSelect,
         handleDirectoryPicker,
         loadVideo
