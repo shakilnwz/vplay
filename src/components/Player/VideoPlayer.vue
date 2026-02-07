@@ -273,7 +273,7 @@ const handleOrientation = (event: DeviceOrientationEvent) => {
 };
 
 // Update Texture Effect
-watch([() => props.isSBS, () => props.sbsFormat, () => props.invertStereo], () => {
+watch([videoRef, sphereRef, () => props.isSBS, () => props.sbsFormat, () => props.invertStereo], () => {
     const video = videoRef.value;
     const sphere = sphereRef.value;
     if (!video || !sphere) return;
@@ -302,7 +302,7 @@ watch([() => props.isSBS, () => props.sbsFormat, () => props.invertStereo], () =
 }, { immediate: true });
 
 // Update Geometry Effect
-watch([() => props.viewMode, () => props.width, () => props.height, () => props.isSBS], () => {
+watch([sphereRef, materialRef, () => props.viewMode, () => props.width, () => props.height, () => props.isSBS], () => {
     if (!sphereRef.value || !materialRef.value) return;
     const mesh = sphereRef.value;
     const material = materialRef.value;
@@ -325,7 +325,7 @@ watch([() => props.viewMode, () => props.width, () => props.height, () => props.
         mesh.scale.set(-1, 1, 1);
         material.uniforms.isSBS.value = props.isSBS ? 1.0 : 0.0;
     }
-});
+}, { immediate: true });
 
 // Watch video ref for parents
 watch(videoRef, (newVal) => {

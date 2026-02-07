@@ -13,10 +13,10 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['pwa-192x192.png', 'pwa-512x512.png'],
       manifest: {
-        name: 'VR Player',
-        short_name: 'VRPlayer',
+        name: 'VPlay',
+        short_name: 'VPlay',
         description: 'Local VR Video Player',
-        theme_color: '#ffffff',
+        theme_color: '#000000ff',
         icons: [
           {
             src: 'pwa-192x192.png',
