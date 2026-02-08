@@ -16,6 +16,7 @@ const {
   filterQuery,
   filterExtension,
   videoMetadata,
+  error,
   handleFileSelect,
   handleDirectoryPicker,
   loadVideo
@@ -28,16 +29,29 @@ const formatTime = (seconds: number) => {
 };
 
 const extensions = ['all', 'mp4', 'webm', 'mov', 'mkv', 'avi'];
+
+const emit = defineEmits<{
+  (e: 'close'): void
+}>();
 </script>
 
 <template>
+
   <div
     :class="[
       isOpen ? 'fixed inset-0 z-40 lg:static' : 'hidden',
-      'lg:flex w-80 bg-gray-800 p-4 overflow-y-auto flex-col h-full border-r border-gray-700'
+      'lg:flex w-80 bg-gray-800 p-4 overflow-y-auto flex-col h-full border-r border-gray-700 isolate'
     ]"
   >
-    <h1 class="text-2xl font-bold mb-4 w-full text-center">VR Player</h1>
+  <div 
+  :class="[
+  isOpen ? 'fixed inset-0 z-0 bg-black/50' : 'hidden '
+    ]" 
+    @click.self="emit('close')"
+    >
+    </div>
+    <div class="relative z-10 h-full overflow-y-auto w-full">
+    <h1 class="text-2xl font-bold mb-4 w-full text-center">VPlay</h1>
 
     <!-- Directory Picker -->
     <button
@@ -64,6 +78,11 @@ const extensions = ['all', 'mp4', 'webm', 'mov', 'mkv', 'avi'];
     <div v-if="directoryPath" class="mb-4 p-3 bg-gray-700 rounded-lg">
       <div class="text-xs text-gray-400">Directory:</div>
       <div class="text-sm truncate">{{ directoryPath }}</div>
+    </div>
+
+    <!-- Error Message -->
+    <div v-if="error" class="mb-4 p-3 bg-red-900/50 border border-red-700 rounded-lg">
+      <p class="text-sm text-red-200">{{ error }}</p>
     </div>
 
     <!-- Alternative File Input -->
@@ -129,7 +148,7 @@ const extensions = ['all', 'mp4', 'webm', 'mov', 'mkv', 'avi'];
       <button
         v-for="(video, index) in processedVideos"
         :key="index"
-        @click="loadVideo(video)"
+        @click="loadVideo(video); emit('close'); "
         :class="[
           'w-full text-left p-3 rounded transition',
           currentVideo === video ? 'bg-blue-600' : 'bg-gray-700 hover:bg-gray-600'
@@ -142,7 +161,8 @@ const extensions = ['all', 'mp4', 'webm', 'mov', 'mkv', 'avi'];
             {{ formatTime(videoMetadata.get(video.name)!.duration) }}
           </span>
         </div>
-      </button>
+        </button>
+      </div>
     </div>
   </div>
 </template>

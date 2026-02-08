@@ -1,5 +1,44 @@
 import { ref, computed } from 'vue';
 
+const VIDEO_EXTENSIONS = /\.(mp4|webm|ogv|mov|mkv|avi|m4v|flv|wmv)$/i;
+const MAX_VIDEO_FILES = 500; // Prevent hangs on large directories (e.g. DCIM on Android)
+
+function isVideoFile(file: File): boolean {
+    return file.type.startsWith('video/') || VIDEO_EXTENSIONS.test(file.name);
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function getVideoFiles(dirHandle: any, path: string, fileCount: { value: number }): Promise<File[]> {
+    const videoFiles: File[] = [];
+    try {
+        for await (const entry of dirHandle.values()) {
+            if (fileCount.value >= MAX_VIDEO_FILES) break;
+            const nestedPath = `${path}/${entry.name}`;
+            if (entry.kind === 'file') {
+                try {
+                    const file = await entry.getFile();
+                    if (isVideoFile(file)) {
+                        Object.defineProperty(file, 'webkitRelativePath', {
+                            value: nestedPath,
+                            writable: false
+                        });
+                        videoFiles.push(file);
+                        fileCount.value++;
+                    }
+                } catch {
+                    // Skip files that can't be read (permission, etc.)
+                }
+            } else if (entry.kind === 'directory') {
+                const subFiles = await getVideoFiles(entry, nestedPath, fileCount);
+                videoFiles.push(...subFiles);
+            }
+        }
+    } catch {
+        // Skip directories that can't be read
+    }
+    return videoFiles;
+}
+
 export interface VideoMetadata {
     duration: number;
     width: number;
@@ -56,50 +95,80 @@ export function useFileHandler() {
     const handleFileSelect = async (event: Event) => {
         const target = event.target as HTMLInputElement;
         const files = Array.from(target.files || []);
-        const videoFiles = files.filter((file: File) =>
-            file.type.startsWith('video/') ||
-            file.name.match(/\.(mp4|webm|ogv|mov|mkv|avi|m4v|flv|wmv)$/i)
-        );
+        const videoFiles = files.filter((file: File) => isVideoFile(file));
+        error.value = null;
         videos.value = videoFiles;
         if (videoFiles.length > 0 && !currentVideo.value) {
             loadVideo(videoFiles[0]);
         }
     };
 
+    const triggerWebkitDirectoryFallback = () => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.webkitdirectory = true;
+        input.multiple = true;
+        input.accept = 'video/*,.mp4,.webm,.ogv,.mov,.mkv,.avi,.m4v,.flv,.wmv';
+        input.addEventListener('change', (event: Event) => {
+            const target = event.target as HTMLInputElement;
+            const files = Array.from(target.files || []);
+            const videoFiles = files.filter((file: File) => isVideoFile(file));
+            videos.value = videoFiles;
+            error.value = null;
+            directoryPath.value = videoFiles[0]?.webkitRelativePath?.split('/')[0] || 'Selected folder';
+            if (videoFiles.length > 0 && !currentVideo.value) {
+                loadVideo(videoFiles[0]);
+            }
+            if (videoFiles.length === 0) {
+                error.value = 'No video files found in this directory.';
+            }
+        });
+        input.click();
+    };
+
     const handleDirectoryPicker = async () => {
+        const isAndroid = /Android/i.test(navigator.userAgent);
+
         if ('showDirectoryPicker' in window) {
             try {
+                error.value = null;
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const directoryHandle = await (window as any).showDirectoryPicker();
                 isScanning.value = true;
-                const videoFiles: File[] = [];
 
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                for await (const entry of (directoryHandle as any).values()) {
-                    if (entry.kind === 'file') {
-                        const file = await entry.getFile();
-                        if (file.type.startsWith('video/') || file.name.match(/\.(mp4|webm|ogv|mov|mkv|avi|m4v|flv|wmv)$/i)) {
-                            Object.defineProperty(file, 'webkitRelativePath', {
-                                value: file.name,
-                                writable: false
-                            });
-                            videoFiles.push(file);
-                        }
-                    }
-                }
+                const fileCount = { value: 0 };
+                const videoFiles = await getVideoFiles(
+                    directoryHandle,
+                    directoryHandle.name,
+                    fileCount
+                );
 
                 videos.value = videoFiles;
                 directoryPath.value = directoryHandle.name;
                 if (videoFiles.length > 0 && !currentVideo.value) {
                     loadVideo(videoFiles[0]);
                 }
+                if (videoFiles.length === 0) {
+                    error.value = 'No video files found in this directory.';
+                    if (isAndroid) {
+                        triggerWebkitDirectoryFallback();
+                    }
+                }
             } catch (err) {
-                console.error('Directory picker error:', err);
+                const errorObj = err as Error;
+                if (errorObj.name !== 'AbortError') {
+                    error.value = 'Failed to open directory. Try the file input below.';
+                    console.error('Directory picker error:', err);
+                    if (isAndroid) {
+                        triggerWebkitDirectoryFallback();
+                    }
+                }
             } finally {
                 isScanning.value = false;
             }
         } else {
-            alert('Your browser does not support the File System Access API. Please use Chrome or Edge, or use the file input below.');
+            error.value = 'Directory picker not supported. Use the file input below.';
+            triggerWebkitDirectoryFallback();
         }
     };
 

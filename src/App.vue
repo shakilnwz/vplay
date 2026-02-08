@@ -13,6 +13,7 @@ const sidebarOpen = ref(false);
 const isUiLocked = ref(false);
 const videoSrc = ref<string | null>(null);
 const videoPlayerCompRef = ref<any>(null); // For resetView
+const videoContainerRef = ref<HTMLElement | null>(null);
 
 // Hooks
 const fileHandler = useFileHandler();
@@ -48,6 +49,41 @@ const handleRecenter = () => {
     if (videoPlayerCompRef.value) {
         videoPlayerCompRef.value.resetView();
     }
+};
+
+const SEEK_DELTA = 15;
+const DOUBLE_TAP_MS = 300;
+let lastTapTime = 0;
+let lastTapSide: 'left' | 'right' | null = null;
+
+const handleSeekByDelta = (delta: number) => {
+    const t = videoPlayer.currentTime.value + delta;
+    const dur = videoPlayer.duration.value || Infinity;
+    videoPlayer.handleSeek(Math.max(0, Math.min(t, dur)));
+};
+
+const handleTouchStart = (e: TouchEvent) => {
+    handleInteract();
+    if (!currentVideo.value || !e.touches.length || !videoContainerRef.value) return;
+    const rect = videoContainerRef.value.getBoundingClientRect();
+    const x = e.touches[0].clientX - rect.left;
+    const side: 'left' | 'right' = x < rect.width / 2 ? 'left' : 'right';
+    const now = Date.now();
+    if (now - lastTapTime < DOUBLE_TAP_MS && lastTapSide === side) {
+        handleSeekByDelta(side === 'left' ? -SEEK_DELTA : SEEK_DELTA);
+        lastTapTime = now - DOUBLE_TAP_MS;
+        lastTapSide = null;
+    } else {
+        lastTapTime = now;
+        lastTapSide = side;
+    }
+};
+
+const handleDblClick = (e: MouseEvent) => {
+    if (!currentVideo.value) return;
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const side = e.clientX - rect.left < rect.width / 2 ? 'left' : 'right';
+    handleSeekByDelta(side === 'left' ? -SEEK_DELTA : SEEK_DELTA);
 };
 
 const handleVideoRef = (node: HTMLVideoElement | null) => {
@@ -105,14 +141,17 @@ onUnmounted(() => {
         <Sidebar
             :isOpen="sidebarOpen && !isUiLocked"
             :fileHandler="fileHandler"
+            @close="sidebarOpen = false"
         />
 
         <!-- Main Content -->
         <div class="flex-1 relative flex flex-col h-full overflow-hidden">
-            <div 
-                class="flex-1 w-full h-full relative" 
-                @mousemove="handleInteract" 
-                @touchstart="handleInteract"
+            <div
+                ref="videoContainerRef"
+                class="flex-1 w-full h-full relative"
+                @mousemove="handleInteract"
+                @touchstart="handleTouchStart"
+                @dblclick="handleDblClick"
             >
                 <VideoPlayer
                     ref="videoPlayerCompRef"
@@ -140,8 +179,13 @@ onUnmounted(() => {
                 </div>
             </div>
 
-            <!-- Floating Controls -->
-            <FloatingOverlay v-if="currentVideo && !isUiLocked" :isVisible="isVisible" @interact="showUI">
+            <!-- Floating Controls (always shown when video playing so double-tap seek works; controls hidden when locked) -->
+            <FloatingOverlay
+              v-if="currentVideo"
+              :isVisible="isVisible && !isUiLocked"
+              @interact="showUI"
+              @seek="handleSeekByDelta"
+            >
                 <Controls
                     :videoPlayer="videoPlayer"
                     :viewControls="viewControls"
