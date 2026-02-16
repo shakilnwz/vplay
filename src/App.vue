@@ -188,6 +188,7 @@ onUnmounted(() => {
                     :error="error"
                     :currentVideo="currentVideo"
                     :videos="videos"
+                    :isUiLocked="isUiLocked"
                     @retry="currentVideo && loadVideo(currentVideo)"
                     @video-ref="handleVideoRef"
                     @load-video="loadVideo"

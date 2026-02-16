@@ -7,6 +7,7 @@ const props = defineProps<{
     error: string | null;
     currentVideo: File | null;
     videos: File[];
+    isUiLocked: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -310,20 +311,19 @@ const isMuted = ref(false);
 
 // UI visibility and locking
 const isUiVisible = ref(true);
-const isUiLocked = ref(false);
 let uiHideTimeout: number | null = null;
 const UI_HIDE_DELAY = 3000;
 
 // Show UI and reset auto-hide timer
-const showUI = () => {
-    if (isUiLocked.value) return;
-    
+const showUI = (force = false) => {
+    if (props.isUiLocked && !force) return;
+
     isUiVisible.value = true;
-    
+
     if (uiHideTimeout) {
         window.clearTimeout(uiHideTimeout);
     }
-    
+
     if (isPlaying.value) {
         uiHideTimeout = window.setTimeout(() => {
             isUiVisible.value = false;
@@ -333,11 +333,12 @@ const showUI = () => {
 
 // Toggle UI lock
 const toggleUiLock = () => {
-    isUiLocked.value = !isUiLocked.value;
-    emit('ui-lock-change', isUiLocked.value);
-    if (!isUiLocked.value) {
-        showUI();
+    const newLockState = !props.isUiLocked;
+    // When unlocking, ensure UI is visible before the element re-renders
+    if (!newLockState) {
+        isUiVisible.value = true;
     }
+    emit('ui-lock-change', newLockState);
 };
 
 const togglePlay = () => {
@@ -467,7 +468,7 @@ onUnmounted(() => {
         </div>
 
         <!-- Navigation Hints -->
-        <div v-if="videos.length > 1 && !isUiLocked" class="absolute right-4 top-1/2 -translate-y-1/2 flex flex-col gap-2 z-10 pointer-events-none">
+        <div v-if="videos.length > 1 && !props.isUiLocked" class="absolute right-4 top-1/2 -translate-y-1/2 flex flex-col gap-2 z-10 pointer-events-none">
             <div 
                 v-if="hasPrev"
                 class="w-10 h-10 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center"
@@ -488,7 +489,7 @@ onUnmounted(() => {
 
         <!-- Zoom indicator -->
         <div 
-            v-if="transform.scale > 1 && !isUiLocked" 
+            v-if="transform.scale > 1 && !props.isUiLocked" 
             class="absolute top-4 right-4 px-3 py-1 rounded-full bg-black/50 backdrop-blur-sm text-white text-sm z-10"
         >
             {{ Math.round(transform.scale * 100) }}%
@@ -496,7 +497,7 @@ onUnmounted(() => {
 
         <!-- Video counter -->
         <div 
-            v-if="videos.length > 0 && !isUiLocked"
+            v-if="videos.length > 0 && !props.isUiLocked"
             class="absolute bottom-4 left-4 px-3 py-1 rounded-full bg-black/50 backdrop-blur-sm text-white text-sm z-10"
         >
             {{ currentVideoIndex + 1 }} / {{ videos.length }}
@@ -513,10 +514,13 @@ onUnmounted(() => {
         </div>
 
         <!-- Portrait Mode Controls -->
-        <div 
-            v-if="currentVideo && !isUiLocked" 
-            class="absolute bottom-0 left-0 right-0 z-50 bg-gradient-to-t from-black/80 to-transparent p-4 transition-opacity duration-500"
-            :class="{ 'opacity-0 pointer-events-none': !isUiVisible, 'opacity-100': isUiVisible }"
+        <div
+            v-if="currentVideo"
+            class="absolute bottom-0 left-0 right-0 z-50 bg-gradient-to-t from-black/80 to-transparent p-4 transition-all duration-500"
+            :class="{
+                'opacity-0 pointer-events-none': !isUiVisible || props.isUiLocked,
+                'opacity-100': isUiVisible && !props.isUiLocked
+            }"
         >
             <!-- Progress Bar -->
             <div class="flex items-center space-x-3 mb-3">
@@ -588,10 +592,10 @@ onUnmounted(() => {
                 <button 
                     @click="toggleUiLock"
                     class="p-3 rounded-full transition-colors"
-                    :class="isUiLocked ? 'bg-blue-600 hover:bg-blue-500 text-white' : 'bg-white/10 hover:bg-white/20 text-white'"
-                    :title="isUiLocked ? 'Unlock Controls' : 'Lock Controls'"
+                    :class="props.isUiLocked ? 'bg-blue-600 hover:bg-blue-500 text-white' : 'bg-white/10 hover:bg-white/20 text-white'"
+                    :title="props.isUiLocked ? 'Unlock Controls' : 'Lock Controls'"
                 >
-                    <svg v-if="isUiLocked" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg v-if="props.isUiLocked" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                     </svg>
                     <svg v-else class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
