@@ -134,9 +134,9 @@ onUnmounted(() => {
             </svg>
         </button>
 
-        <!-- Unlock Button (Visible only when locked and in VR mode) -->
+        <!-- Unlock Button (Visible only when locked) -->
         <button
-            v-if="isUiLocked && viewControls.playerMode.value === 'vr'"
+            v-if="isUiLocked"
             @click="isUiLocked = false"
             class="fixed top-4 right-4 z-50 p-2 bg-black/20 backdrop-blur-sm ring-1 ring-white/50 rounded-full border border-white/20 hover:bg-black/30 transition-all"
         >
@@ -192,6 +192,7 @@ onUnmounted(() => {
                     @video-ref="handleVideoRef"
                     @load-video="loadVideo"
                     @interact="handleInteract"
+                    @ui-lock-change="(locked: boolean) => isUiLocked = locked"
                 />
             </div>
 

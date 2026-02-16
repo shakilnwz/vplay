@@ -1,1 +1,12 @@
 @import 'tailwindcss';
+
+/* Prevent pull-to-refresh globally */
+html, body {
+  overscroll-behavior: none;
+  overscroll-behavior-y: none;
+}
+
+/* Additional safeguard for mobile browsers */
+* {
+  touch-action: pan-x pan-y;
+}
