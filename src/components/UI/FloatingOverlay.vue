@@ -44,17 +44,19 @@ const handleTouchStart = (_e: TouchEvent, side: 'left' | 'right') => {
     class="fixed inset-x-0 bottom-0 z-30 flex flex-col justify-end pointer-events-none"
     style="height: 30%"
   >
-    <!-- Left half: double-tap to seek -15s -->
+    <!-- Left 15%: double-tap to seek -15s -->
     <div
-      class="absolute inset-y-0 left-0 w-1/2 z-40 pointer-events-auto"
+      class="absolute inset-y-0 left-0 z-40 pointer-events-auto"
+      style="width: 15%"
       @mouseenter="handleInteract"
       @touchstart="handleTouchStart($event, 'left')"
       @mousemove="handleInteract"
       @dblclick="handleDblClick(-SEEK_DELTA)"
     />
-    <!-- Right half: double-tap to seek +15s -->
+    <!-- Right 15%: double-tap to seek +15s -->
     <div
-      class="absolute inset-y-0 right-0 w-1/2 z-40 pointer-events-auto"
+      class="absolute inset-y-0 right-0 z-40 pointer-events-auto"
+      style="width: 15%"
       @mouseenter="handleInteract"
       @touchstart="handleTouchStart($event, 'right')"
       @mousemove="handleInteract"

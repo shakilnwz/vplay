@@ -2,6 +2,7 @@ import { ref, watchEffect } from 'vue';
 
 export type ViewMode = 'flat' | '360' | '180' | 'fisheye';
 export type SBSFormat = 'horizontal' | 'vertical';
+export type PlayerMode = 'vr' | 'portrait';
 
 const STORAGE_KEY = 'vr-player-settings';
 
@@ -10,6 +11,7 @@ interface SavedSettings {
     isSBS: boolean;
     sbsFormat: SBSFormat;
     invertStereo?: boolean;
+    playerMode?: PlayerMode;
 }
 
 function getInitialSettings(): SavedSettings {
@@ -25,7 +27,8 @@ function getInitialSettings(): SavedSettings {
         viewMode: '180',
         isSBS: true,
         sbsFormat: 'horizontal',
-        invertStereo: false
+        invertStereo: false,
+        playerMode: 'vr'
     };
 }
 
@@ -38,6 +41,7 @@ export function useViewControls() {
     const invertStereo = ref(initial.invertStereo || false);
     const gyroEnabled = ref(false);
     const orientationLocked = ref(false);
+    const playerMode = ref<PlayerMode>(initial.playerMode || 'vr');
 
     // Persist settings whenever they change
     watchEffect(() => {
@@ -45,7 +49,8 @@ export function useViewControls() {
             viewMode: viewMode.value,
             isSBS: isSBS.value,
             sbsFormat: sbsFormat.value,
-            invertStereo: invertStereo.value
+            invertStereo: invertStereo.value,
+            playerMode: playerMode.value
         };
         try {
             localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
@@ -107,6 +112,7 @@ export function useViewControls() {
         gyroEnabled,
         enableGyro,
         orientationLocked,
-        toggleOrientationLock
+        toggleOrientationLock,
+        playerMode
     };
 }

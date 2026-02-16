@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import type { useFileHandler } from '../../hooks/useFileHandler';
+import type { PlayerMode } from '../../hooks/useViewControls';
 
 const props = defineProps<{
   isOpen: boolean;
   fileHandler: ReturnType<typeof useFileHandler>;
+  playerMode: PlayerMode;
 }>();
 
 const {
@@ -31,7 +33,8 @@ const formatTime = (seconds: number) => {
 const extensions = ['all', 'mp4', 'webm', 'mov', 'mkv', 'avi'];
 
 const emit = defineEmits<{
-  (e: 'close'): void
+  (e: 'close'): void;
+  (e: 'update:playerMode', mode: PlayerMode): void;
 }>();
 </script>
 
@@ -52,6 +55,38 @@ const emit = defineEmits<{
     </div>
     <div class="relative z-10 h-full overflow-y-auto w-full">
     <h1 class="text-2xl font-bold mb-4 w-full text-center">VPlay</h1>
+
+    <!-- Player Mode Toggle -->
+    <div class="flex gap-2 mb-4">
+      <button
+        @click="$emit('update:playerMode', 'vr')"
+        :class="[
+          'flex-1 py-2 px-3 rounded-lg text-sm font-medium transition flex items-center justify-center gap-2',
+          playerMode === 'vr' 
+            ? 'bg-blue-600 text-white' 
+            : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+        ]"
+      >
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+        </svg>
+        VR Mode
+      </button>
+      <button
+        @click="$emit('update:playerMode', 'portrait')"
+        :class="[
+          'flex-1 py-2 px-3 rounded-lg text-sm font-medium transition flex items-center justify-center gap-2',
+          playerMode === 'portrait' 
+            ? 'bg-blue-600 text-white' 
+            : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+        ]"
+      >
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+        </svg>
+        Portrait
+      </button>
+    </div>
 
     <!-- Directory Picker -->
     <button

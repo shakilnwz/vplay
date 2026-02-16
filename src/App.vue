@@ -4,6 +4,7 @@ import Sidebar from './components/UI/Sidebar.vue';
 import FloatingOverlay from './components/UI/FloatingOverlay.vue';
 import Controls from './components/UI/Controls.vue';
 import VideoPlayer from './components/Player/VideoPlayer.vue';
+import PortraitPlayer from './components/Player/PortraitPlayer.vue';
 import { useFileHandler } from './hooks/useFileHandler';
 import { useVideoPlayer } from './hooks/useVideoPlayer';
 import { useViewControls } from './hooks/useViewControls';
@@ -22,7 +23,8 @@ const {
     isLoadingVideo, 
     error, 
     loadVideo, 
-    videoMetadata
+    videoMetadata,
+    videos
 } = fileHandler;
 
 // Note: I missed adding setIsLoadingVideo and setError to useFileHandler return in my conversion.
@@ -67,7 +69,10 @@ const handleTouchStart = (e: TouchEvent) => {
     if (!currentVideo.value || !e.touches.length || !videoContainerRef.value) return;
     const rect = videoContainerRef.value.getBoundingClientRect();
     const x = e.touches[0].clientX - rect.left;
-    const side: 'left' | 'right' = x < rect.width / 2 ? 'left' : 'right';
+    const relativeX = x / rect.width;
+    // Only handle double-tap in left 15% or right 15% of screen
+    if (relativeX > 0.15 && relativeX < 0.85) return;
+    const side: 'left' | 'right' = relativeX <= 0.15 ? 'left' : 'right';
     const now = Date.now();
     if (now - lastTapTime < DOUBLE_TAP_MS && lastTapSide === side) {
         handleSeekByDelta(side === 'left' ? -SEEK_DELTA : SEEK_DELTA);
@@ -82,7 +87,10 @@ const handleTouchStart = (e: TouchEvent) => {
 const handleDblClick = (e: MouseEvent) => {
     if (!currentVideo.value) return;
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const side = e.clientX - rect.left < rect.width / 2 ? 'left' : 'right';
+    const relativeX = (e.clientX - rect.left) / rect.width;
+    // Only handle double-click in left 15% or right 15% of screen
+    if (relativeX > 0.15 && relativeX < 0.85) return;
+    const side = relativeX <= 0.15 ? 'left' : 'right';
     handleSeekByDelta(side === 'left' ? -SEEK_DELTA : SEEK_DELTA);
 };
 
@@ -126,9 +134,9 @@ onUnmounted(() => {
             </svg>
         </button>
 
-        <!-- Unlock Button (Visible only when locked) -->
+        <!-- Unlock Button (Visible only when locked and in VR mode) -->
         <button
-            v-if="isUiLocked"
+            v-if="isUiLocked && viewControls.playerMode.value === 'vr'"
             @click="isUiLocked = false"
             class="fixed top-4 right-4 z-50 p-2 bg-black/20 backdrop-blur-sm ring-1 ring-white/50 rounded-full border border-white/20 hover:bg-black/30 transition-all"
         >
@@ -141,6 +149,7 @@ onUnmounted(() => {
         <Sidebar
             :isOpen="sidebarOpen && !isUiLocked"
             :fileHandler="fileHandler"
+            v-model:playerMode="viewControls.playerMode.value"
             @close="sidebarOpen = false"
         />
 
@@ -153,7 +162,9 @@ onUnmounted(() => {
                 @touchstart="handleTouchStart"
                 @dblclick="handleDblClick"
             >
+                <!-- VR Mode Player -->
                 <VideoPlayer
+                    v-if="viewControls.playerMode.value === 'vr'"
                     ref="videoPlayerCompRef"
                     @video-ref="handleVideoRef"
                     :src="videoSrc"
@@ -169,19 +180,24 @@ onUnmounted(() => {
                     :height="currentVideo ? videoMetadata.get(currentVideo.name)?.height : undefined"
                 />
 
-                <div v-if="!currentVideo" class="absolute inset-0 flex items-center justify-center pointer-events-none">
-                    <div class="text-center p-6 bg-gray-800 bg-opacity-80 rounded-lg">
-                        <svg class="w-24 h-24 mx-auto mb-4 text-gray-600" fill="currentColor" viewBox="0 0 20 20">
-                            <path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM14.553 7.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z" />
-                        </svg>
-                        <p class="text-xl text-gray-400">Select a video to start playing</p>
-                    </div>
-                </div>
+                <!-- Portrait Mode Player -->
+                <PortraitPlayer
+                    v-else
+                    :src="videoSrc"
+                    :isLoading="isLoadingVideo"
+                    :error="error"
+                    :currentVideo="currentVideo"
+                    :videos="videos"
+                    @retry="currentVideo && loadVideo(currentVideo)"
+                    @video-ref="handleVideoRef"
+                    @load-video="loadVideo"
+                    @interact="handleInteract"
+                />
             </div>
 
-            <!-- Floating Controls (always shown when video playing so double-tap seek works; controls hidden when locked) -->
+            <!-- Floating Controls (VR mode only, always shown when video playing so double-tap seek works; controls hidden when locked) -->
             <FloatingOverlay
-              v-if="currentVideo"
+              v-if="currentVideo && viewControls.playerMode.value === 'vr'"
               :isVisible="isVisible && !isUiLocked"
               @interact="showUI"
               @seek="handleSeekByDelta"
