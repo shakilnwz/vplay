@@ -74,7 +74,50 @@ watch(() => props.currentVideo, () => {
     expanded.value = true;
 });
 
+const isFullscreen = ref(false);
+
+const checkFullscreen = () => {
+    isFullscreen.value = !!(
+        document.fullscreenElement ||
+        (document as any).webkitFullscreenElement ||
+        (document as any).mozFullScreenElement ||
+        (document as any).msFullscreenElement
+    );
+};
+
+const handleFullscreen = () => {
+    const docEl = document.documentElement as any;
+    if (!document.fullscreenElement && 
+        !(document as any).webkitFullscreenElement && 
+        !(document as any).mozFullScreenElement && 
+        !(document as any).msFullscreenElement) {
+        const req = docEl.requestFullscreen || 
+                    docEl.webkitRequestFullscreen || 
+                    docEl.mozRequestFullScreen || 
+                    docEl.msRequestFullscreen;
+        if (req) {
+            req.call(docEl, { navigationUI: 'hide' }).catch((err: any) => {
+                console.log('Fullscreen error:', err);
+            });
+        }
+    } else {
+        const exit = document.exitFullscreen || 
+                     (document as any).webkitExitFullscreen || 
+                     (document as any).mozCancelFullScreen || 
+                     (document as any).msExitFullscreen;
+        if (exit) {
+            exit.call(document);
+        }
+    }
+};
+
 onMounted(() => {
+    document.addEventListener('fullscreenchange', checkFullscreen);
+    document.addEventListener('webkitfullscreenchange', checkFullscreen);
+    document.addEventListener('mozfullscreenchange', checkFullscreen);
+    document.addEventListener('MSFullscreenChange', checkFullscreen);
+    checkFullscreen();
+
     if (props.videoPlayer.isPlaying.value) {
         autoCollapseTimer = setTimeout(() => {
             expanded.value = false;
@@ -83,17 +126,13 @@ onMounted(() => {
     }
 });
 
-onUnmounted(clearAutoCollapseTimer);
-
-const handleFullscreen = () => {
-    if (!document.fullscreenElement) {
-        document.documentElement.requestFullscreen().catch(err => {
-            console.log('Fullscreen error:', err);
-        });
-    } else {
-        document.exitFullscreen();
-    }
-};
+onUnmounted(() => {
+    clearAutoCollapseTimer();
+    document.removeEventListener('fullscreenchange', checkFullscreen);
+    document.removeEventListener('webkitfullscreenchange', checkFullscreen);
+    document.removeEventListener('mozfullscreenchange', checkFullscreen);
+    document.removeEventListener('MSFullscreenChange', checkFullscreen);
+});
 
 // Unified Button Styles
 const buttonBaseClass = "flex items-center justify-center p-2 sm:p-2.5 rounded-lg border border-white/20 transition-all duration-200 font-medium text-xs sm:text-sm h-full grow whitespace-nowrap w-max";
@@ -137,6 +176,19 @@ const selectClass = "p-2 sm:p-2.5 bg-white/10 rounded-lg text-xs sm:text-sm text
                 <span class="text-xs font-mono text-gray-400 w-10">{{ formatTime(duration) }}</span>
             </div>
 
+
+            <!-- Fullscreen Button -->
+            <button 
+                @click="handleFullscreen" 
+                class="p-1.5 rounded-full transition-all duration-200 text-white border border-white/20 flex-shrink-0 bg-white/10 hover:bg-white/20"
+                :title="isFullscreen ? 'Exit Fullscreen' : 'Fullscreen (F)'">
+                <svg v-if="isFullscreen" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 14h6v6m0-6L4 20m16-6h-6v6m0-6l6 6M20 10h-6V4m0 6l6-6M4 10h6V4m0 6L4 4" />
+                </svg>
+                <svg v-else class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                </svg>
+            </button>
 
             <button 
                 @click="toggleAccordion" 
@@ -260,16 +312,7 @@ const selectClass = "p-2 sm:p-2.5 bg-white/10 rounded-lg text-xs sm:text-sm text
                             {{ gyroEnabled ? '🎯 Gyro' : '📱 Gyro' }}
                         </button>
 
-                        <!-- Fullscreen -->
-                        <button
-                            @click="handleFullscreen"
-                            :class="[buttonBaseClass, buttonInactive]"
-                            title="Fullscreen (F)"
-                        >
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-                            </svg>
-                        </button>
+
 
                         <!-- UI Lock -->
                         <button

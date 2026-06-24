@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onUnmounted } from 'vue';
+import { ref, watch, onMounted, onUnmounted } from 'vue';
 import Sidebar from './components/UI/Sidebar.vue';
 import FloatingOverlay from './components/UI/FloatingOverlay.vue';
 import Controls from './components/UI/Controls.vue';
@@ -110,7 +110,85 @@ watch(currentVideo, (newVideo) => {
     }
 });
 
+const lastVolume = ref(1);
+const toggleMute = () => {
+    if (videoPlayer.volume.value > 0) {
+        lastVolume.value = videoPlayer.volume.value;
+        videoPlayer.handleVolumeChange(0);
+    } else {
+        videoPlayer.handleVolumeChange(lastVolume.value);
+    }
+};
+
+const handleGlobalFullscreen = () => {
+    const docEl = document.documentElement as any;
+    if (!document.fullscreenElement && 
+        !(document as any).webkitFullscreenElement && 
+        !(document as any).mozFullScreenElement && 
+        !(document as any).msFullscreenElement) {
+        const req = docEl.requestFullscreen || 
+                    docEl.webkitRequestFullscreen || 
+                    docEl.mozRequestFullScreen || 
+                    docEl.msRequestFullscreen;
+        if (req) {
+            req.call(docEl, { navigationUI: 'hide' }).catch((err: any) => {
+                console.log('Fullscreen error:', err);
+            });
+        }
+    } else {
+        const exit = document.exitFullscreen || 
+                     (document as any).webkitExitFullscreen || 
+                     (document as any).mozCancelFullScreen || 
+                     (document as any).msExitFullscreen;
+        if (exit) {
+            exit.call(document);
+        }
+    }
+};
+
+const handleKeyDown = (e: KeyboardEvent) => {
+    if (
+        document.activeElement?.tagName === 'INPUT' ||
+        document.activeElement?.tagName === 'TEXTAREA' ||
+        document.activeElement?.tagName === 'SELECT'
+    ) {
+        return;
+    }
+
+    switch (e.key.toLowerCase()) {
+        case ' ':
+            e.preventDefault();
+            videoPlayer.togglePlay();
+            break;
+        case 'f':
+            e.preventDefault();
+            handleGlobalFullscreen();
+            break;
+        case 'm':
+            e.preventDefault();
+            toggleMute();
+            break;
+        case 'arrowleft':
+            e.preventDefault();
+            handleSeekByDelta(-15);
+            break;
+        case 'arrowright':
+            e.preventDefault();
+            handleSeekByDelta(15);
+            break;
+        case 's':
+            e.preventDefault();
+            viewControls.viewMode.value = viewControls.viewMode.value === '360' ? 'flat' : '360';
+            break;
+    }
+};
+
+onMounted(() => {
+    window.addEventListener('keydown', handleKeyDown);
+});
+
 onUnmounted(() => {
+    window.removeEventListener('keydown', handleKeyDown);
     if (videoSrc.value) {
         URL.revokeObjectURL(videoSrc.value);
     }
