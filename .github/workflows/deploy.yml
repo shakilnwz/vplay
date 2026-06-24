@@ -2,7 +2,8 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: ["vueapp"] # Triggers automatically when you push to development branch
+    tags:
+      - 'v*' # Triggers automatically when you push a version tag (e.g., v1.0.0)
 
   # Allows manual triggering from the Actions tab
   workflow_dispatch:
