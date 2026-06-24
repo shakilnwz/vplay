@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { ref, watch, onUnmounted } from 'vue';
 
 interface UseVideoPlayerProps {
     onLoad?: () => void;
@@ -6,89 +6,97 @@ interface UseVideoPlayerProps {
 }
 
 export function useVideoPlayer({ onLoad, onError }: UseVideoPlayerProps = {}) {
-    const [videoElement, setVideoElement] = useState<HTMLVideoElement | null>(null);
-    const [isPlaying, setIsPlaying] = useState(false);
-    const [volume, setVolume] = useState(1);
-    const [currentTime, setCurrentTime] = useState(0);
-    const [duration, setDuration] = useState(0);
-    const [playbackSpeed, setPlaybackSpeed] = useState(1);
+    const videoElement = ref<HTMLVideoElement | null>(null);
+    const isPlaying = ref(false);
+    const volume = ref(1);
+    const currentTime = ref(0);
+    const duration = ref(0);
+    const playbackSpeed = ref(1);
 
-    // Callback ref to capture the video element
-    const videoRef = useCallback((node: HTMLVideoElement | null) => {
-        if (node) {
-            setVideoElement(node);
-        }
-    }, []);
-
-    const togglePlay = useCallback(() => {
-        if (videoElement) {
-            if (isPlaying) {
-                videoElement.pause();
+    const togglePlay = () => {
+        if (videoElement.value) {
+            if (isPlaying.value) {
+                videoElement.value.pause();
             } else {
-                videoElement.play();
+                videoElement.value.play();
             }
-            setIsPlaying(!isPlaying);
+            isPlaying.value = !isPlaying.value;
         }
-    }, [isPlaying, videoElement]);
+    };
 
     const handleVolumeChange = (newVolume: number) => {
-        setVolume(newVolume);
-        if (videoElement) {
-            videoElement.volume = newVolume;
+        volume.value = newVolume;
+        if (videoElement.value) {
+            videoElement.value.volume = newVolume;
         }
     };
 
     const handleSeek = (newTime: number) => {
-        setCurrentTime(newTime);
-        if (videoElement) {
-            videoElement.currentTime = newTime;
+        currentTime.value = newTime;
+        if (videoElement.value) {
+            videoElement.value.currentTime = newTime;
         }
     };
 
     const handlePlaybackSpeedChange = (speed: number) => {
-        setPlaybackSpeed(speed);
-        if (videoElement) {
-            videoElement.playbackRate = speed;
+        playbackSpeed.value = speed;
+        if (videoElement.value) {
+            videoElement.value.playbackRate = speed;
         }
     };
 
-    useEffect(() => {
-        if (!videoElement) return;
+    const handleTimeUpdate = () => {
+        if (videoElement.value) {
+            currentTime.value = videoElement.value.currentTime;
+        }
+    };
 
-        const handleTimeUpdate = () => setCurrentTime(videoElement.currentTime);
-        const handleLoadedMetadata = () => {
-            setDuration(videoElement.duration);
+    const handleLoadedMetadata = () => {
+        if (videoElement.value) {
+            duration.value = videoElement.value.duration;
             if (onLoad) onLoad();
-        };
-        const handleEnded = () => setIsPlaying(false);
-        const handleError = () => {
-            // Basic error handling
-            if (videoElement.error && onError) {
-                onError(videoElement.error.message || 'Video playback error');
-            }
-            setIsPlaying(false);
-        };
+        }
+    };
 
-        // Re-apply states if element changes
-        videoElement.volume = volume;
-        videoElement.playbackRate = playbackSpeed;
+    const handleEnded = () => {
+        isPlaying.value = false;
+    };
 
-        videoElement.addEventListener('timeupdate', handleTimeUpdate);
-        videoElement.addEventListener('loadedmetadata', handleLoadedMetadata);
-        videoElement.addEventListener('ended', handleEnded);
-        videoElement.addEventListener('error', handleError);
+    const handleError = () => {
+        if (videoElement.value && videoElement.value.error && onError) {
+            onError(videoElement.value.error.message || 'Video playback error');
+        }
+        isPlaying.value = false;
+    };
 
-        return () => {
-            videoElement.removeEventListener('timeupdate', handleTimeUpdate);
-            videoElement.removeEventListener('loadedmetadata', handleLoadedMetadata);
-            videoElement.removeEventListener('ended', handleEnded);
-            videoElement.removeEventListener('error', handleError);
-        };
-    }, [videoElement, onLoad, onError]); // volume/speed not deps as they are set on change but initialized here
+    watch(videoElement, (newEl, oldEl) => {
+        if (oldEl) {
+            oldEl.removeEventListener('timeupdate', handleTimeUpdate);
+            oldEl.removeEventListener('loadedmetadata', handleLoadedMetadata);
+            oldEl.removeEventListener('ended', handleEnded);
+            oldEl.removeEventListener('error', handleError);
+        }
+        if (newEl) {
+            newEl.volume = volume.value;
+            newEl.playbackRate = playbackSpeed.value;
+            newEl.addEventListener('timeupdate', handleTimeUpdate);
+            newEl.addEventListener('loadedmetadata', handleLoadedMetadata);
+            newEl.addEventListener('ended', handleEnded);
+            newEl.addEventListener('error', handleError);
+        }
+    });
+
+    onUnmounted(() => {
+        if (videoElement.value) {
+            videoElement.value.removeEventListener('timeupdate', handleTimeUpdate);
+            videoElement.value.removeEventListener('loadedmetadata', handleLoadedMetadata);
+            videoElement.value.removeEventListener('ended', handleEnded);
+            videoElement.value.removeEventListener('error', handleError);
+        }
+    });
 
     return {
-        videoRef, // Pass this to the <video> element
-        videoElement, // Access the element if needed
+        videoElement, // Explicitly return the ref for binding
         isPlaying,
         volume,
         currentTime,
@@ -97,7 +105,6 @@ export function useVideoPlayer({ onLoad, onError }: UseVideoPlayerProps = {}) {
         togglePlay,
         handleVolumeChange,
         handleSeek,
-        handlePlaybackSpeedChange,
-        setIsPlaying
+        handlePlaybackSpeedChange
     };
 }

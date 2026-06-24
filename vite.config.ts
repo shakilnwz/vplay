@@ -1,5 +1,5 @@
 import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
+import vue from '@vitejs/plugin-vue'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
@@ -7,16 +7,19 @@ import { VitePWA } from 'vite-plugin-pwa'
 export default defineConfig({
   base: '/vplay/',
   plugins: [
-    react(),
+    vue(),
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['pwa-192x192.png', 'pwa-512x512.png'],
       manifest: {
-        name: 'VR Player',
-        short_name: 'VRPlayer',
+        name: 'VPlay',
+        short_name: 'VPlay',
         description: 'Local VR Video Player',
-        theme_color: '#ffffff',
+        theme_color: '#000000',
+        background_color: '#000000',
+        display: 'fullscreen',
+        orientation: 'any',
         icons: [
           {
             src: 'pwa-192x192.png',

@@ -1,34 +1,35 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { ref, onUnmounted, watch } from 'vue';
 
-export function useAutoHideUI(isPlaying: boolean, timeout: number = 3000) {
-    const [isVisible, setIsVisible] = useState(true);
-    const timeoutRef = useRef<number | null>(null);
+export function useAutoHideUI(isPlayingRef: { value: boolean }, timeout: number = 3000) {
+    const isVisible = ref(true);
+    let timeoutId: number | null = null;
 
-    const showUI = useCallback(() => {
-        setIsVisible(true);
-        if (timeoutRef.current) {
-            window.clearTimeout(timeoutRef.current);
+    const showUI = () => {
+        isVisible.value = true;
+        if (timeoutId) {
+            window.clearTimeout(timeoutId);
         }
-        if (isPlaying) {
-            timeoutRef.current = window.setTimeout(() => {
-                setIsVisible(false);
+        if (isPlayingRef.value) {
+            timeoutId = window.setTimeout(() => {
+                isVisible.value = false;
             }, timeout);
         }
-    }, [isPlaying, timeout]);
+    };
 
-    useEffect(() => {
-        if (isPlaying) {
+    watch(() => isPlayingRef.value, (playing) => {
+        if (playing) {
             showUI();
         } else {
-            setIsVisible(true);
-            if (timeoutRef.current) {
-                window.clearTimeout(timeoutRef.current);
+            isVisible.value = true;
+            if (timeoutId) {
+                window.clearTimeout(timeoutId);
             }
         }
-        return () => {
-            if (timeoutRef.current) window.clearTimeout(timeoutRef.current);
-        };
-    }, [isPlaying, showUI]);
+    }, { immediate: true });
+
+    onUnmounted(() => {
+        if (timeoutId) window.clearTimeout(timeoutId);
+    });
 
     return { isVisible, showUI };
 }
