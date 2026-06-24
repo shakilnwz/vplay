@@ -1,3 +1,5 @@
+import './index.css';
+import { registerSW } from 'virtual:pwa-register';
 import { store } from './store';
 import { SidebarComponent } from './components/Sidebar';
 import { ControlsComponent } from './components/Controls';
@@ -609,9 +611,5 @@ document.addEventListener('fullscreenchange', () => {
 
 // Register PWA Service Worker
 if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js').catch(err => {
-            console.warn('PWA service worker registration failed: ', err);
-        });
-    });
+    registerSW({ immediate: true });
 }
