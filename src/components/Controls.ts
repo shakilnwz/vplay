@@ -7,9 +7,25 @@ export class ControlsComponent {
     private hideTimeout: number | null = null;
     private HIDE_DELAY = 3000;
 
+    private panelContainer: HTMLDivElement;
+
     constructor() {
         this.element = document.createElement('div');
         this.element.className = 'absolute bottom-0 inset-x-0 z-30 pointer-events-none select-none flex flex-col justify-end';
+        
+        this.panelContainer = document.createElement('div');
+        this.panelContainer.className = 'w-full pointer-events-none flex flex-col justify-end';
+        this.element.appendChild(this.panelContainer);
+
+        const hotspot = document.createElement('div');
+        hotspot.className = 'w-full h-5 pointer-events-auto cursor-pointer hover:bg-white/5 transition flex items-center justify-center pb-1';
+        hotspot.innerHTML = '<div class="w-12 h-1.5 rounded-full bg-white/20 hover:bg-white/40 transition"></div>';
+        hotspot.onclick = (e) => {
+            e.stopPropagation();
+            if (store.isUiLocked.value) return;
+            store.isUiVisible.value = !store.isUiVisible.value;
+        };
+        this.element.appendChild(hotspot);
         
         this.setupStateTracking();
         this.render();
@@ -52,7 +68,7 @@ export class ControlsComponent {
         
         // Listen to visibility updates to toggle CSS opacity classes
         store.isUiVisible.subscribe(visible => {
-            const inner = this.element.querySelector('.controls-panel-inner') as HTMLElement | null;
+            const inner = this.panelContainer.querySelector('.controls-panel-inner') as HTMLElement | null;
             if (inner) {
                 if (visible) {
                     inner.classList.remove('opacity-0', 'pointer-events-none');
@@ -96,7 +112,7 @@ export class ControlsComponent {
 
     private render() {
         this.cleanupRenderSubscriptions();
-        this.element.innerHTML = '';
+        this.panelContainer.innerHTML = '';
         const videoFile = store.currentVideo.value;
         if (!videoFile) return;
 
@@ -121,8 +137,8 @@ export class ControlsComponent {
             this.handleSeekDelta(15);
         };
         
-        this.element.appendChild(seekOverlayLeft);
-        this.element.appendChild(seekOverlayRight);
+        this.panelContainer.appendChild(seekOverlayLeft);
+        this.panelContainer.appendChild(seekOverlayRight);
 
         if (playerMode === 'vr') {
             this.renderVRControls(inner);
@@ -130,7 +146,7 @@ export class ControlsComponent {
             this.renderPortraitControls(inner);
         }
 
-        this.element.appendChild(inner);
+        this.panelContainer.appendChild(inner);
     }
 
     private renderVRControls(container: HTMLDivElement) {

@@ -281,8 +281,8 @@ export class WebGLRenderer {
                     const sinPhi = Math.sin(phi);
                     const cosPhi = Math.cos(phi);
 
-                    // Render sphere from inside (X flipped)
-                    const px = -radius * cosPhi * sinTheta;
+                    // Render sphere from inside (X corrected)
+                    const px = radius * cosPhi * sinTheta;
                     const py = radius * cosTheta;
                     const pz = radius * sinPhi * sinTheta;
 
@@ -329,20 +329,73 @@ export class WebGLRenderer {
         const canvas = this.gl.canvas as HTMLCanvasElement;
         
         // Mouse Input
-        canvas.addEventListener('mousedown', this.handleMouseDown.bind(this));
-        window.addEventListener('mousemove', this.handleMouseMove.bind(this));
-        window.addEventListener('mouseup', this.handleMouseUp.bind(this));
+        canvas.addEventListener('mousedown', this.handleMouseDown);
+        window.addEventListener('mousemove', this.handleMouseMove);
+        window.addEventListener('mouseup', this.handleMouseUp);
         
         // Touch Input
-        canvas.addEventListener('touchstart', this.handleTouchStart.bind(this), { passive: false });
-        canvas.addEventListener('touchmove', this.handleTouchMove.bind(this), { passive: false });
-        canvas.addEventListener('touchend', this.handleTouchEnd.bind(this));
+        canvas.addEventListener('touchstart', this.handleTouchStart, { passive: false });
+        canvas.addEventListener('touchmove', this.handleTouchMove, { passive: false });
+        canvas.addEventListener('touchend', this.handleTouchEnd);
         
         // Gyro
-        window.addEventListener('deviceorientation', this.handleOrientation.bind(this));
+        window.addEventListener('deviceorientation', this.handleOrientation);
     }
 
-    private handleMouseDown(e: MouseEvent) {
+    private eulerToQuaternionYXZ(x: number, y: number, z: number) {
+        const c1 = Math.cos(x / 2);
+        const s1 = Math.sin(x / 2);
+        const c2 = Math.cos(y / 2);
+        const s2 = Math.sin(y / 2);
+        const c3 = Math.cos(z / 2);
+        const s3 = Math.sin(z / 2);
+
+        return {
+            x: s1 * c2 * c3 + c1 * s2 * s3,
+            y: c1 * s2 * c3 - s1 * c2 * s3,
+            z: c1 * c2 * s3 - s1 * s2 * c3,
+            w: c1 * c2 * c3 + s1 * s2 * s3
+        };
+    }
+
+    private quaternionMultiply(
+        q1: { x: number; y: number; z: number; w: number },
+        q2: { x: number; y: number; z: number; w: number }
+    ) {
+        return {
+            x: q1.x * q2.w + q1.w * q2.x + q1.y * q2.z - q1.z * q2.y,
+            y: q1.y * q2.w + q1.w * q2.y + q1.z * q2.x - q1.x * q2.z,
+            z: q1.z * q2.w + q1.w * q2.z + q1.x * q2.y - q1.y * q2.x,
+            w: q1.w * q2.w - q1.x * q2.x - q1.y * q2.y - q1.z * q2.z
+        };
+    }
+
+    private quaternionToEulerYXZ(q: { x: number; y: number; z: number; w: number }) {
+        const clamp = (val: number, min: number, max: number) => Math.max(min, Math.min(max, val));
+        
+        const m23 = 2 * (q.y * q.z - q.w * q.x);
+        const m13 = 2 * (q.x * q.z + q.w * q.y);
+        const m33 = 1 - 2 * (q.x * q.x + q.y * q.y);
+        const m21 = 2 * (q.x * q.y + q.w * q.z);
+        const m22 = 1 - 2 * (q.x * q.x + q.z * q.z);
+        const m31 = 2 * (q.x * q.z - q.w * q.y);
+        const m11 = 1 - 2 * (q.y * q.y + q.z * q.z);
+
+        let x = 0, y = 0, z = 0;
+        x = Math.asin(-clamp(m23, -1, 1));
+
+        if (Math.abs(m23) < 0.99999) {
+            y = Math.atan2(m13, m33);
+            z = Math.atan2(m21, m22);
+        } else {
+            y = Math.atan2(-m31, m11);
+            z = 0;
+        }
+
+        return { x, y, z };
+    }
+
+    private handleMouseDown = (e: MouseEvent) => {
         this.isDragging = true;
         this.previousMousePosition.x = e.clientX;
         this.previousMousePosition.y = e.clientY;
@@ -350,9 +403,9 @@ export class WebGLRenderer {
         this.gyroBase.y = this.targetRotation.y;
         this.gyroBase.z = this.targetRotation.z;
         this.gyroInitialized = false;
-    }
+    };
 
-    private handleMouseMove(e: MouseEvent) {
+    private handleMouseMove = (e: MouseEvent) => {
         if (!this.isDragging) return;
         const deltaX = e.clientX - this.previousMousePosition.x;
         const deltaY = e.clientY - this.previousMousePosition.y;
@@ -360,13 +413,13 @@ export class WebGLRenderer {
         this.targetRotation.x -= deltaY * 0.005;
         this.previousMousePosition.x = e.clientX;
         this.previousMousePosition.y = e.clientY;
-    }
+    };
 
-    private handleMouseUp() {
+    private handleMouseUp = () => {
         this.isDragging = false;
-    }
+    };
 
-    private handleTouchStart(e: TouchEvent) {
+    private handleTouchStart = (e: TouchEvent) => {
         if (e.touches.length === 1) {
             this.isDragging = true;
             this.previousMousePosition.x = e.touches[0].clientX;
@@ -385,9 +438,9 @@ export class WebGLRenderer {
             this.initialFov = this.fov;
             this.initialRoll = this.targetRotation.z;
         }
-    }
+    };
 
-    private handleTouchMove(e: TouchEvent) {
+    private handleTouchMove = (e: TouchEvent) => {
         if (e.touches.length === 1 && this.isDragging) {
             const deltaX = e.touches[0].clientX - this.previousMousePosition.x;
             const deltaY = e.touches[0].clientY - this.previousMousePosition.y;
@@ -411,26 +464,41 @@ export class WebGLRenderer {
                 this.targetRotation.z = this.initialRoll + (currentAngle - this.touchStartAngle);
             }
         }
-    }
+    };
 
-    private handleTouchEnd() {
+    private handleTouchEnd = () => {
         this.isDragging = false;
         this.touchStartDistance = null;
         this.touchStartAngle = null;
-    }
+    };
 
-    private handleOrientation(event: DeviceOrientationEvent) {
+    private handleOrientation = (event: DeviceOrientationEvent) => {
         if (!this.gyroEnabled || this.isDragging) return;
 
         const degToRad = Math.PI / 180;
         const alpha = event.alpha ? event.alpha * degToRad : 0;
         const beta = event.beta ? event.beta * degToRad : 0;
         const gamma = event.gamma ? event.gamma * degToRad : 0;
-        const angle = window.screen.orientation ? window.screen.orientation.angle * degToRad : 0;
 
-        const x = beta;
-        const y = alpha;
-        const z = -gamma - angle;
+        let screenAngle = 0;
+        if (window.screen && window.screen.orientation) {
+            screenAngle = window.screen.orientation.angle * degToRad;
+        } else if ('orientation' in window) {
+            screenAngle = (window as unknown as { orientation: number }).orientation * degToRad;
+        }
+
+        const qDevice = this.eulerToQuaternionYXZ(beta, alpha, -gamma);
+
+        const cosS = Math.cos(-screenAngle / 2);
+        const sinS = Math.sin(-screenAngle / 2);
+        const qScreen = { x: 0, y: 0, z: sinS, w: cosS };
+
+        const qCombined = this.quaternionMultiply(qDevice, qScreen);
+        const newEuler = this.quaternionToEulerYXZ(qCombined);
+
+        const x = newEuler.x;
+        const y = newEuler.y;
+        const z = newEuler.z;
 
         if (!this.gyroInitialized) {
             this.gyroOffset.x = x;
@@ -440,10 +508,14 @@ export class WebGLRenderer {
             return;
         }
 
-        this.targetRotation.x = this.gyroBase.x + (x - this.gyroOffset.x);
-        this.targetRotation.y = this.gyroBase.y + (y - this.gyroOffset.y);
-        this.targetRotation.z = this.gyroBase.z + (z - this.gyroOffset.z);
-    }
+        const dx = x - this.gyroOffset.x;
+        const dy = y - this.gyroOffset.y;
+        const dz = z - this.gyroOffset.z;
+
+        this.targetRotation.x = this.gyroBase.x + dx;
+        this.targetRotation.y = this.gyroBase.y + dy;
+        this.targetRotation.z = this.gyroBase.z + dz;
+    };
 
     private getPerspectiveMatrix(fovDeg: number, aspect: number, near: number, far: number): Float32Array {
         const f = 1.0 / Math.tan((fovDeg * Math.PI / 180) / 2);
