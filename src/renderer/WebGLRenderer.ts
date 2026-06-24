@@ -245,10 +245,10 @@ export class WebGLRenderer {
                  halfW,  halfH, -10
             ]);
             uvs = new Float32Array([
-                0, 0,
                 0, 1,
-                1, 1,
-                1, 0
+                0, 0,
+                1, 0,
+                1, 1
             ]);
             indices = new Uint16Array([
                 0, 1, 2,
@@ -287,7 +287,7 @@ export class WebGLRenderer {
                     const pz = radius * sinPhi * sinTheta;
 
                     posArr.push(px, py, pz);
-                    uvArr.push(u, v);
+                    uvArr.push(u, 1.0 - v);
                 }
             }
 
@@ -356,8 +356,8 @@ export class WebGLRenderer {
         if (!this.isDragging) return;
         const deltaX = e.clientX - this.previousMousePosition.x;
         const deltaY = e.clientY - this.previousMousePosition.y;
-        this.targetRotation.y += deltaX * 0.005;
-        this.targetRotation.x += deltaY * 0.005;
+        this.targetRotation.y -= deltaX * 0.005;
+        this.targetRotation.x -= deltaY * 0.005;
         this.previousMousePosition.x = e.clientX;
         this.previousMousePosition.y = e.clientY;
     }
@@ -391,8 +391,8 @@ export class WebGLRenderer {
         if (e.touches.length === 1 && this.isDragging) {
             const deltaX = e.touches[0].clientX - this.previousMousePosition.x;
             const deltaY = e.touches[0].clientY - this.previousMousePosition.y;
-            this.targetRotation.y += deltaX * 0.005;
-            this.targetRotation.x += deltaY * 0.005;
+            this.targetRotation.y -= deltaX * 0.005;
+            this.targetRotation.x -= deltaY * 0.005;
             this.previousMousePosition.x = e.touches[0].clientX;
             this.previousMousePosition.y = e.touches[0].clientY;
         } else if (e.touches.length === 2) {

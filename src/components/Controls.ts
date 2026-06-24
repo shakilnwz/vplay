@@ -65,6 +65,18 @@ export class ControlsComponent {
         });
     }
 
+
+    private renderSubscriptions: (() => void)[] = [];
+
+    private sub<T>(obs: { subscribe: (l: (v: T) => void) => () => void }, listener: (val: T) => void) {
+        this.renderSubscriptions.push(obs.subscribe(listener));
+    }
+
+    private cleanupRenderSubscriptions() {
+        this.renderSubscriptions.forEach(unsub => unsub());
+        this.renderSubscriptions = [];
+    }
+
     private formatTime(seconds: number): string {
         const mins = Math.floor(seconds / 60);
         const secs = Math.floor(seconds % 60);
@@ -83,6 +95,7 @@ export class ControlsComponent {
     }
 
     private render() {
+        this.cleanupRenderSubscriptions();
         this.element.innerHTML = '';
         const videoFile = store.currentVideo.value;
         if (!videoFile) return;
@@ -133,7 +146,7 @@ export class ControlsComponent {
                 ? `<svg class="w-4.5 h-4.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>`
                 : `<svg class="w-4.5 h-4.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd" /></svg>`;
         };
-        store.isPlaying.subscribe(updatePlayIcon);
+        this.sub(store.isPlaying, updatePlayIcon);
         playBtn.onclick = () => {
             const video = store.videoElement.value;
             if (video) {
@@ -155,12 +168,12 @@ export class ControlsComponent {
         progressInput.step = '0.1';
         progressInput.className = 'flex-1 h-1 bg-white/20 rounded-full appearance-none cursor-pointer accent-blue-500 hover:accent-blue-400 transition';
         
-        store.currentTime.subscribe(t => {
+        this.sub(store.currentTime, t => {
             progressInput.value = t.toString();
             timeStart.textContent = this.formatTime(t);
         });
         
-        store.duration.subscribe(d => {
+        this.sub(store.duration, d => {
             progressInput.max = d.toString();
         });
 
@@ -174,7 +187,7 @@ export class ControlsComponent {
 
         const timeEnd = document.createElement('span');
         timeEnd.className = 'text-[10px] font-mono text-gray-400 w-10';
-        store.duration.subscribe(d => timeEnd.textContent = this.formatTime(d));
+        this.sub(store.duration, d => timeEnd.textContent = this.formatTime(d));
         scrubberRow.appendChild(timeEnd);
 
         // Accordion toggle button
@@ -207,7 +220,7 @@ export class ControlsComponent {
         // Video Title & Options Grid
         const title = document.createElement('div');
         title.className = 'text-sm font-bold text-white/95 truncate px-1';
-        store.currentVideo.subscribe(f => title.textContent = f?.name || '');
+        this.sub(store.currentVideo, f => title.textContent = f?.name || '');
         accordionContent.appendChild(title);
 
         const optionsGrid = document.createElement('div');
@@ -236,7 +249,7 @@ export class ControlsComponent {
                 ? `<svg class="w-4.5 h-4.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.707.707L4.586 13H2a1 1 0 01-1-1V8a1 1 0 011-1h2.586l3.707-3.707a1 1 0 011.09-.217zM12.293 7.293a1 1 0 011.414 0L15 8.586l1.293-1.293a1 1 0 111.414 1.414L16.414 10l1.293 1.293a1 1 0 01-1.414 1.414L15 11.414l-1.293 1.293a1 1 0 01-1.414-1.414L13.586 10l-1.293-1.293a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>`
                 : `<svg class="w-4.5 h-4.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.707.707L4.586 13H2a1 1 0 01-1-1V8a1 1 0 011-1h2.586l3.707-3.707a1 1 0 011.09-.217zM14.657 2.929a1 1 0 011.414 0A9.972 9.972 0 0119 10a9.972 9.972 0 01-2.929 7.071 1 1 0 01-1.414-1.414A7.971 7.971 0 0017 10c0-2.21-.894-4.208-2.343-5.657a1 1 0 010-1.414zm-2.829 2.828a1 1 0 011.415 0A5.983 5.983 0 0115 10a5.984 5.984 0 01-1.757 4.243 1 1 0 01-1.415-1.415A3.984 3.984 0 0013 10a3.983 3.983 0 00-1.172-2.828 1 1 0 010-1.415z" clip-rule="evenodd" /></svg>`;
         };
-        store.isMuted.subscribe(updateMuteBtn);
+        this.sub(store.isMuted, updateMuteBtn);
         volContainer.appendChild(muteBtn);
 
         const volInput = document.createElement('input');
@@ -249,12 +262,12 @@ export class ControlsComponent {
         const updateVolInput = () => {
             volInput.value = (store.isMuted.value ? 0 : store.volume.value).toString();
         };
-        store.volume.subscribe(v => {
+        this.sub(store.volume, v => {
             const video = store.videoElement.value;
             if (video) video.volume = v;
             updateVolInput();
         });
-        store.isMuted.subscribe(updateVolInput);
+        this.sub(store.isMuted, updateVolInput);
         
         volInput.oninput = () => {
             const v = parseFloat(volInput.value);
@@ -280,7 +293,7 @@ export class ControlsComponent {
             <option value="1.5" class="bg-gray-900">1.5x</option>
             <option value="2.0" class="bg-gray-900">2x</option>
         `;
-        store.playbackSpeed.subscribe(s => {
+        this.sub(store.playbackSpeed, s => {
             speedSel.value = s.toString();
             const video = store.videoElement.value;
             if (video) video.playbackRate = s;
@@ -298,7 +311,7 @@ export class ControlsComponent {
             <option value="180" class="bg-gray-900">🌐 180°</option>
             <option value="flat" class="bg-gray-900">▦ Flat</option>
         `;
-        store.viewMode.subscribe(v => viewSel.value = v);
+        this.sub(store.viewMode, v => viewSel.value = v);
         viewSel.onchange = () => {
             store.viewMode.value = viewSel.value as ViewMode;
         };
@@ -324,7 +337,7 @@ export class ControlsComponent {
             if (isSBS) sbsBtn.classList.add(...activeClass.split(' '));
             else sbsBtn.classList.remove(...activeClass.split(' '));
         };
-        store.isSBS.subscribe(updateSbsBtn);
+        this.sub(store.isSBS, updateSbsBtn);
         sbsBtn.onclick = () => store.isSBS.value = !store.isSBS.value;
         optionsGrid.appendChild(sbsBtn);
 
@@ -335,13 +348,13 @@ export class ControlsComponent {
         const updateSbsFormatBtn = (format: SBSFormat) => {
             sbsFormatBtn.textContent = format === 'horizontal' ? '⬅️➡️ H' : '⬆️⬇️ V';
         };
-        store.sbsFormat.subscribe(updateSbsFormatBtn);
+        this.sub(store.sbsFormat, updateSbsFormatBtn);
         sbsFormatBtn.onclick = () => {
             store.sbsFormat.value = store.sbsFormat.value === 'horizontal' ? 'vertical' : 'horizontal';
         };
         
         // Hide format toggle if SBS is disabled or flat mode is active
-        store.isSBS.subscribe(sbs => {
+        this.sub(store.isSBS, sbs => {
             if (sbs) sbsFormatBtn.classList.remove('hidden');
             else sbsFormatBtn.classList.add('hidden');
         });
@@ -356,10 +369,10 @@ export class ControlsComponent {
             if (invert) swapBtn.classList.add(...activeClass.split(' '));
             else swapBtn.classList.remove(...activeClass.split(' '));
         };
-        store.invertStereo.subscribe(updateSwapBtn);
+        this.sub(store.invertStereo, updateSwapBtn);
         swapBtn.onclick = () => store.invertStereo.value = !store.invertStereo.value;
         
-        store.isSBS.subscribe(sbs => {
+        this.sub(store.isSBS, sbs => {
             if (sbs) swapBtn.classList.remove('hidden');
             else swapBtn.classList.add('hidden');
         });
@@ -374,7 +387,7 @@ export class ControlsComponent {
             if (locked) orientBtn.classList.add(...activeClass.split(' '));
             else orientBtn.classList.remove(...activeClass.split(' '));
         };
-        store.orientationLocked.subscribe(updateOrientBtn);
+        this.sub(store.orientationLocked, updateOrientBtn);
         orientBtn.onclick = async () => {
             if ('orientation' in screen) {
                 try {
@@ -403,7 +416,7 @@ export class ControlsComponent {
             if (enabled) gyroBtn.classList.add(...activeClass.split(' '));
             else gyroBtn.classList.remove(...activeClass.split(' '));
         };
-        store.gyroEnabled.subscribe(updateGyroBtn);
+        this.sub(store.gyroEnabled, updateGyroBtn);
         gyroBtn.onclick = async () => {
             if (store.gyroEnabled.value) {
                 store.gyroEnabled.value = false;
@@ -481,12 +494,12 @@ export class ControlsComponent {
         progressInput.step = '0.1';
         progressInput.className = 'flex-1 h-1 bg-white/30 rounded-full appearance-none cursor-pointer accent-blue-500';
         
-        store.currentTime.subscribe(t => {
+        this.sub(store.currentTime, t => {
             progressInput.value = t.toString();
             timeStart.textContent = this.formatTime(t);
         });
         
-        store.duration.subscribe(d => {
+        this.sub(store.duration, d => {
             progressInput.max = d.toString();
         });
 
@@ -500,7 +513,7 @@ export class ControlsComponent {
 
         const timeEnd = document.createElement('span');
         timeEnd.className = 'text-[10px] font-mono text-gray-300 w-10';
-        store.duration.subscribe(d => timeEnd.textContent = this.formatTime(d));
+        this.sub(store.duration, d => timeEnd.textContent = this.formatTime(d));
         scrubberRow.appendChild(timeEnd);
         container.appendChild(scrubberRow);
 
@@ -517,7 +530,7 @@ export class ControlsComponent {
                 ? `<svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>`
                 : `<svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd" /></svg>`;
         };
-        store.isPlaying.subscribe(updatePlayIcon);
+        this.sub(store.isPlaying, updatePlayIcon);
         playBtn.onclick = () => {
             const video = store.videoElement.value;
             if (video) {
@@ -548,7 +561,7 @@ export class ControlsComponent {
                 ? `<svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.707.707L4.586 13H2a1 1 0 01-1-1V8a1 1 0 011-1h2.586l3.707-3.707a1 1 0 011.09-.217zM12.293 7.293a1 1 0 011.414 0L15 8.586l1.293-1.293a1 1 0 111.414 1.414L16.414 10l1.293 1.293a1 1 0 01-1.414 1.414L15 11.414l-1.293 1.293a1 1 0 01-1.414-1.414L13.586 10l-1.293-1.293a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>`
                 : `<svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.707.707L4.586 13H2a1 1 0 01-1-1V8a1 1 0 011-1h2.586l3.707-3.707a1 1 0 011.09-.217zM14.657 2.929a1 1 0 011.414 0A9.972 9.972 0 0119 10a9.972 9.972 0 01-2.929 7.071 1 1 0 01-1.414-1.414A7.971 7.971 0 0017 10c0-2.21-.894-4.208-2.343-5.657a1 1 0 010-1.414zm-2.829 2.828a1 1 0 011.415 0A5.983 5.983 0 0115 10a5.984 5.984 0 01-1.757 4.243 1 1 0 01-1.415-1.415A3.984 3.984 0 0013 10a3.983 3.983 0 00-1.172-2.828 1 1 0 010-1.415z" clip-rule="evenodd" /></svg>`;
         };
-        store.isMuted.subscribe(updateMuteIcon);
+        this.sub(store.isMuted, updateMuteIcon);
         volContainer.appendChild(muteBtn);
 
         const volInput = document.createElement('input');
@@ -561,12 +574,12 @@ export class ControlsComponent {
         const updateVolInput = () => {
             volInput.value = (store.isMuted.value ? 0 : store.volume.value).toString();
         };
-        store.volume.subscribe(v => {
+        this.sub(store.volume, v => {
             const video = store.videoElement.value;
             if (video) video.volume = v;
             updateVolInput();
         });
-        store.isMuted.subscribe(updateVolInput);
+        this.sub(store.isMuted, updateVolInput);
         
         volInput.oninput = () => {
             const v = parseFloat(volInput.value);
@@ -598,7 +611,7 @@ export class ControlsComponent {
         };
         
         // Note: Portrait mode uses viewMode locally as aspect sizing settings
-        store.viewMode.subscribe(updateViewCycleIcon);
+        this.sub(store.viewMode, updateViewCycleIcon);
         
         viewModeCycleBtn.onclick = () => {
             const curr = store.viewMode.value;
@@ -625,7 +638,7 @@ export class ControlsComponent {
                 ? `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 10h6V4m0 6l-7-7m17 7h-6V4m0 6l7-7M4 14h6v6m0-6l-7 7m17-7h-6v6m0-6l7 7" /></svg>`
                 : `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg>`;
         };
-        store.isFullscreen.subscribe(updateFsIcon);
+        this.sub(store.isFullscreen, updateFsIcon);
         
         fsBtn.onclick = () => {
             if (!document.fullscreenElement) {
