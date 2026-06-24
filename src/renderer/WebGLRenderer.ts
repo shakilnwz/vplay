@@ -222,7 +222,15 @@ export class WebGLRenderer {
         if (settings.isSBS !== undefined) this.isSBS = settings.isSBS;
         if (settings.sbsFormat !== undefined) this.sbsFormat = settings.sbsFormat;
         if (settings.invertStereo !== undefined) this.invertStereo = settings.invertStereo;
-        if (settings.gyroEnabled !== undefined) this.gyroEnabled = settings.gyroEnabled;
+        if (settings.gyroEnabled !== undefined) {
+            if (settings.gyroEnabled && !this.gyroEnabled) {
+                this.gyroInitialized = false;
+                this.gyroBase.x = this.targetRotation.x;
+                this.gyroBase.y = this.targetRotation.y;
+                this.gyroBase.z = this.targetRotation.z;
+            }
+            this.gyroEnabled = settings.gyroEnabled;
+        }
 
         if (geomNeedsUpdate) {
             this.updateGeometry();

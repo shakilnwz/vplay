@@ -490,9 +490,17 @@ export class ControlsComponent {
         
         container.appendChild(accordionContent);
         
-        // Trigger initial accordion layout styles
-        accordionContent.style.maxHeight = '300px';
-        accordionContent.style.opacity = '1';
+        // Trigger initial accordion layout styles based on state
+        const svg = accBtn.querySelector('svg');
+        if (this.accordionOpen) {
+            if (svg) svg.classList.remove('rotate-180');
+            accordionContent.style.maxHeight = '300px';
+            accordionContent.style.opacity = '1';
+        } else {
+            if (svg) svg.classList.add('rotate-180');
+            accordionContent.style.maxHeight = '0px';
+            accordionContent.style.opacity = '0';
+        }
     }
 
     private renderPortraitControls(container: HTMLDivElement) {
