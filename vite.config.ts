@@ -16,7 +16,10 @@ export default defineConfig({
         name: 'VPlay',
         short_name: 'VPlay',
         description: 'Local VR Video Player',
-        theme_color: '#000000ff',
+        theme_color: '#111827',
+        background_color: '#111827',
+        display: 'standalone',
+        orientation: 'any',
         icons: [
           {
             src: 'pwa-192x192.png',

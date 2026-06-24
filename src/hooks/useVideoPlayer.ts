@@ -12,6 +12,7 @@ export function useVideoPlayer({ onLoad, onError }: UseVideoPlayerProps = {}) {
     const currentTime = ref(0);
     const duration = ref(0);
     const playbackSpeed = ref(1);
+    const isMuted = ref(false);
 
     const togglePlay = () => {
         if (videoElement.value) {
@@ -28,6 +29,18 @@ export function useVideoPlayer({ onLoad, onError }: UseVideoPlayerProps = {}) {
         volume.value = newVolume;
         if (videoElement.value) {
             videoElement.value.volume = newVolume;
+            // Unmute automatically if user adjusts volume up
+            if (newVolume > 0 && isMuted.value) {
+                isMuted.value = false;
+                videoElement.value.muted = false;
+            }
+        }
+    };
+
+    const toggleMute = () => {
+        isMuted.value = !isMuted.value;
+        if (videoElement.value) {
+            videoElement.value.muted = isMuted.value;
         }
     };
 
@@ -79,6 +92,7 @@ export function useVideoPlayer({ onLoad, onError }: UseVideoPlayerProps = {}) {
         if (newEl) {
             newEl.volume = volume.value;
             newEl.playbackRate = playbackSpeed.value;
+            newEl.muted = isMuted.value;
             newEl.addEventListener('timeupdate', handleTimeUpdate);
             newEl.addEventListener('loadedmetadata', handleLoadedMetadata);
             newEl.addEventListener('ended', handleEnded);
@@ -102,8 +116,10 @@ export function useVideoPlayer({ onLoad, onError }: UseVideoPlayerProps = {}) {
         currentTime,
         duration,
         playbackSpeed,
+        isMuted,
         togglePlay,
         handleVolumeChange,
+        toggleMute,
         handleSeek,
         handlePlaybackSpeedChange
     };

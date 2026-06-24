@@ -1,4 +1,4 @@
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 
 const VIDEO_EXTENSIONS = /\.(mp4|webm|ogv|mov|mkv|avi|m4v|flv|wmv)$/i;
 const MAX_VIDEO_FILES = 500; // Prevent hangs on large directories (e.g. DCIM on Android)
@@ -6,6 +6,57 @@ const MAX_VIDEO_FILES = 500; // Prevent hangs on large directories (e.g. DCIM on
 function isVideoFile(file: File): boolean {
     return file.type.startsWith('video/') || VIDEO_EXTENSIONS.test(file.name);
 }
+
+// IndexedDB Caching configuration
+const DB_NAME = 'vplay-metadata-cache';
+const STORE_NAME = 'metadata';
+const DB_VERSION = 1;
+
+function openDB(): Promise<IDBDatabase> {
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
+        request.onupgradeneeded = () => {
+            const db = request.result;
+            if (!db.objectStoreNames.contains(STORE_NAME)) {
+                db.createObjectStore(STORE_NAME);
+            }
+        };
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+    });
+}
+
+async function getCachedMetadata(key: string): Promise<VideoMetadata | null> {
+    try {
+        const db = await openDB();
+        return new Promise((resolve) => {
+            const tx = db.transaction(STORE_NAME, 'readonly');
+            const store = tx.objectStore(STORE_NAME);
+            const request = store.get(key);
+            request.onsuccess = () => resolve(request.result || null);
+            request.onerror = () => resolve(null);
+        });
+    } catch {
+        return null;
+    }
+}
+
+async function setCachedMetadata(key: string, value: VideoMetadata): Promise<void> {
+    try {
+        const db = await openDB();
+        return new Promise((resolve) => {
+            const tx = db.transaction(STORE_NAME, 'readwrite');
+            const store = tx.objectStore(STORE_NAME);
+            store.put(value, key);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => resolve();
+        });
+    } catch {
+        // Ignore database errors
+    }
+}
+
+const getCacheKey = (file: File) => `${file.name}-${file.size}-${file.lastModified}`;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function getVideoFiles(dirHandle: any, path: string, fileCount: { value: number }): Promise<File[]> {
@@ -58,10 +109,24 @@ export function useFileHandler() {
     const isLoadingVideo = ref(false);
     const error = ref<string | null>(null);
 
+    let currentScanTaskId = 0;
+
     const extractVideoMetadata = async (file: File): Promise<VideoMetadata | null> => {
+        const cacheKey = getCacheKey(file);
+
+        // 1. Check reactive state
         const cached = videoMetadata.value.get(file.name);
         if (cached) return cached;
 
+        // 2. Check IndexedDB cache
+        const dbCached = await getCachedMetadata(cacheKey);
+        if (dbCached) {
+            videoMetadata.value.set(file.name, dbCached);
+            videoMetadata.value = new Map(videoMetadata.value); // Trigger reactivity
+            return dbCached;
+        }
+
+        // 3. Extract using dummy element
         return new Promise((resolve) => {
             const video = document.createElement('video');
             video.preload = 'metadata';
@@ -72,8 +137,8 @@ export function useFileHandler() {
                     height: video.videoHeight
                 };
                 videoMetadata.value.set(file.name, metadata);
-                // Trigger reactivity for Map if needed, but in Vue 3 Map is reactive if ref'd
-                // videoMetadata.value = new Map(videoMetadata.value); 
+                videoMetadata.value = new Map(videoMetadata.value); // Trigger reactivity
+                setCachedMetadata(cacheKey, metadata);
                 URL.revokeObjectURL(video.src);
                 resolve(metadata);
             };
@@ -84,6 +149,35 @@ export function useFileHandler() {
             video.src = URL.createObjectURL(file);
         });
     };
+
+    const startBackgroundMetadataScan = async (filesToScan: File[]) => {
+        const taskId = ++currentScanTaskId;
+        const concurrency = 2;
+        let index = 0;
+
+        const worker = async () => {
+            while (index < filesToScan.length) {
+                if (taskId !== currentScanTaskId) break; // Cancel old scan
+
+                const file = filesToScan[index++];
+                if (!videoMetadata.value.has(file.name)) {
+                    await extractVideoMetadata(file);
+                    // Yield CPU briefly to prevent visual frame stutter
+                    await new Promise(r => setTimeout(r, 40));
+                }
+            }
+        };
+
+        const workers = Array(concurrency).fill(null).map(() => worker());
+        await Promise.all(workers);
+    };
+
+    // Watch video file array to trigger background scan
+    watch(videos, (newVideos) => {
+        if (newVideos.length > 0) {
+            startBackgroundMetadataScan(newVideos);
+        }
+    });
 
     const loadVideo = (file: File) => {
         error.value = null;

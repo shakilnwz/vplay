@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onUnmounted } from 'vue';
+import { ref, watch, onMounted, onUnmounted } from 'vue';
 import Sidebar from './components/UI/Sidebar.vue';
 import FloatingOverlay from './components/UI/FloatingOverlay.vue';
 import Controls from './components/UI/Controls.vue';
@@ -15,6 +15,8 @@ const isUiLocked = ref(false);
 const videoSrc = ref<string | null>(null);
 const videoPlayerCompRef = ref<any>(null); // For resetView
 const videoContainerRef = ref<HTMLElement | null>(null);
+const sharedVideoRef = ref<HTMLVideoElement | null>(null);
+const hiddenVideoContainerRef = ref<HTMLDivElement | null>(null);
 
 // Hooks
 const fileHandler = useFileHandler();
@@ -26,9 +28,6 @@ const {
     videoMetadata,
     videos
 } = fileHandler;
-
-// Note: I missed adding setIsLoadingVideo and setError to useFileHandler return in my conversion.
-// I'll assume they are there or I'll fix them. Let's assume I fix them.
 
 const videoPlayer = useVideoPlayer({
     onLoad: () => { isLoadingVideo.value = false; },
@@ -94,8 +93,60 @@ const handleDblClick = (e: MouseEvent) => {
     handleSeekByDelta(side === 'left' ? -SEEK_DELTA : SEEK_DELTA);
 };
 
-const handleVideoRef = (node: HTMLVideoElement | null) => {
-    videoPlayer.videoElement.value = node;
+// Keyboard shortcuts
+const handleKeyDown = (e: KeyboardEvent) => {
+    if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'SELECT') {
+        return;
+    }
+
+    switch (e.code) {
+        case 'Space':
+            e.preventDefault();
+            videoPlayer.togglePlay();
+            handleInteract();
+            break;
+        case 'ArrowLeft':
+            e.preventDefault();
+            handleSeekByDelta(-SEEK_DELTA);
+            handleInteract();
+            break;
+        case 'ArrowRight':
+            e.preventDefault();
+            handleSeekByDelta(SEEK_DELTA);
+            handleInteract();
+            break;
+        case 'ArrowUp':
+            e.preventDefault();
+            videoPlayer.handleVolumeChange(Math.min(1, videoPlayer.volume.value + 0.1));
+            handleInteract();
+            break;
+        case 'ArrowDown':
+            e.preventDefault();
+            videoPlayer.handleVolumeChange(Math.max(0, videoPlayer.volume.value - 0.1));
+            handleInteract();
+            break;
+        case 'KeyM':
+            e.preventDefault();
+            videoPlayer.toggleMute();
+            handleInteract();
+            break;
+        case 'KeyF':
+            e.preventDefault();
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(err => console.log(err));
+            } else {
+                document.exitFullscreen();
+            }
+            handleInteract();
+            break;
+        case 'KeyR':
+        case 'KeyC':
+            if (viewControls.playerMode.value === 'vr') {
+                e.preventDefault();
+                handleRecenter();
+            }
+            break;
+    }
 };
 
 // Watch current video to create blob URL
@@ -110,7 +161,24 @@ watch(currentVideo, (newVideo) => {
     }
 });
 
+// Watch playerMode to return video element to hidden container if switching to VR
+watch(viewControls.playerMode, (mode) => {
+    if (mode === 'vr' && sharedVideoRef.value && hiddenVideoContainerRef.value) {
+        if (!hiddenVideoContainerRef.value.contains(sharedVideoRef.value)) {
+            hiddenVideoContainerRef.value.appendChild(sharedVideoRef.value);
+        }
+    }
+});
+
+onMounted(() => {
+    window.addEventListener('keydown', handleKeyDown);
+    if (sharedVideoRef.value) {
+        videoPlayer.videoElement.value = sharedVideoRef.value;
+    }
+});
+
 onUnmounted(() => {
+    window.removeEventListener('keydown', handleKeyDown);
     if (videoSrc.value) {
         URL.revokeObjectURL(videoSrc.value);
     }
@@ -119,6 +187,19 @@ onUnmounted(() => {
 
 <template>
     <div class="flex h-screen bg-gray-900 text-white overflow-hidden">
+        <!-- Persistent Hidden Container for Shared Video Element -->
+        <div v-show="false" ref="hiddenVideoContainerRef">
+            <video
+                ref="sharedVideoRef"
+                :src="videoSrc || undefined"
+                class="hidden"
+                playsinline
+                crossorigin="anonymous"
+                loop
+                autoplay
+            />
+        </div>
+
         <!-- Mobile Sidebar Toggle -->
         <button
             v-if="!isUiLocked"
@@ -166,8 +247,7 @@ onUnmounted(() => {
                 <VideoPlayer
                     v-if="viewControls.playerMode.value === 'vr'"
                     ref="videoPlayerCompRef"
-                    @video-ref="handleVideoRef"
-                    :src="videoSrc"
+                    :videoElement="sharedVideoRef"
                     :viewMode="viewControls.viewMode.value"
                     :isSBS="viewControls.isSBS.value"
                     :sbsFormat="viewControls.sbsFormat.value"
@@ -183,14 +263,14 @@ onUnmounted(() => {
                 <!-- Portrait Mode Player -->
                 <PortraitPlayer
                     v-else
-                    :src="videoSrc"
+                    :videoElement="sharedVideoRef"
+                    :videoPlayer="videoPlayer"
                     :isLoading="isLoadingVideo"
                     :error="error"
                     :currentVideo="currentVideo"
                     :videos="videos"
                     :isUiLocked="isUiLocked"
                     @retry="currentVideo && loadVideo(currentVideo)"
-                    @video-ref="handleVideoRef"
                     @load-video="loadVideo"
                     @interact="handleInteract"
                     @ui-lock-change="(locked: boolean) => isUiLocked = locked"

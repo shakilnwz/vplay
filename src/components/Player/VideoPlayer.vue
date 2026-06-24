@@ -9,7 +9,7 @@ const props = defineProps<{
     gyroEnabled: boolean;
     isLoading: boolean;
     error: string | null;
-    src: string | null;
+    videoElement: HTMLVideoElement | null;
     width?: number;
     height?: number;
     invertStereo?: boolean;
@@ -17,11 +17,9 @@ const props = defineProps<{
 
 const emit = defineEmits<{
     (e: 'retry'): void;
-    (e: 'video-ref', node: HTMLVideoElement | null): void;
 }>();
 
 const containerRef = ref<HTMLDivElement | null>(null);
-const videoRef = ref<HTMLVideoElement | null>(null);
 
 const sceneRef = ref<THREE.Scene | null>(null);
 const cameraRef = ref<THREE.PerspectiveCamera | null>(null);
@@ -61,10 +59,11 @@ const shader = {
         void main() {
             vec2 uv = vUv;
             if (isSBS > 0.5) {
-                float offset = invertStereo > 0.5 ? 0.5 : 0.0;
                 if (sbsFormat < 0.5) {
+                    float offset = invertStereo > 0.5 ? 0.5 : 0.0;
                     uv.x = uv.x * 0.5 + offset;
                 } else {
+                    float offset = invertStereo > 0.5 ? 0.0 : 0.5;
                     uv.y = uv.y * 0.5 + offset;
                 }
             }
@@ -76,6 +75,12 @@ const shader = {
 const resetView = () => {
     rotation.x = 0; rotation.y = 0; rotation.z = 0;
     targetRotation.x = 0; targetRotation.y = 0; targetRotation.z = 0;
+    gyroInitialized.value = false;
+    gyroBase.x = 0; gyroBase.y = 0; gyroBase.z = 0;
+    if (cameraRef.value) {
+        cameraRef.value.fov = 75;
+        cameraRef.value.updateProjectionMatrix();
+    }
 };
 
 defineExpose({ resetView });
@@ -142,6 +147,14 @@ onMounted(() => {
         geometry.dispose();
         renderer.dispose();
         cleanupInputHandling();
+        
+        // Cleanup texture and material
+        if (materialRef.value) {
+            if (materialRef.value.uniforms.map.value) {
+                materialRef.value.uniforms.map.value.dispose();
+            }
+            materialRef.value.dispose();
+        }
     });
 });
 
@@ -272,11 +285,18 @@ const handleOrientation = (event: DeviceOrientationEvent) => {
     targetRotation.z = gyroBase.z + (newEuler.z - gyroOffset.z);
 };
 
-// Update Texture Effect
-watch([videoRef, sphereRef, () => props.isSBS, () => props.sbsFormat, () => props.invertStereo], () => {
-    const video = videoRef.value;
+// Create Texture Effect
+watch([() => props.videoElement, sphereRef], () => {
+    const video = props.videoElement;
     const sphere = sphereRef.value;
     if (!video || !sphere) return;
+
+    if (materialRef.value) {
+        if (materialRef.value.uniforms.map.value) {
+            materialRef.value.uniforms.map.value.dispose();
+        }
+        materialRef.value.dispose();
+    }
 
     const videoTexture = new THREE.VideoTexture(video);
     videoTexture.minFilter = THREE.LinearFilter;
@@ -301,8 +321,18 @@ watch([videoRef, sphereRef, () => props.isSBS, () => props.sbsFormat, () => prop
     materialRef.value = material;
 }, { immediate: true });
 
+// Update uniforms when settings change
+watch([() => props.isSBS, () => props.sbsFormat, () => props.invertStereo], ([isSBS, sbsFormat, invertStereo]) => {
+    const material = materialRef.value;
+    if (material) {
+        material.uniforms.isSBS.value = isSBS ? 1.0 : 0.0;
+        material.uniforms.sbsFormat.value = sbsFormat === 'horizontal' ? 0.0 : 1.0;
+        material.uniforms.invertStereo.value = invertStereo ? 1.0 : 0.0;
+    }
+});
+
 // Update Geometry Effect
-watch([sphereRef, materialRef, () => props.viewMode, () => props.width, () => props.height, () => props.isSBS], () => {
+watch([sphereRef, materialRef, () => props.viewMode, () => props.width, () => props.height], () => {
     if (!sphereRef.value || !materialRef.value) return;
     const mesh = sphereRef.value;
     const material = materialRef.value;
@@ -326,23 +356,10 @@ watch([sphereRef, materialRef, () => props.viewMode, () => props.width, () => pr
         material.uniforms.isSBS.value = props.isSBS ? 1.0 : 0.0;
     }
 }, { immediate: true });
-
-// Watch video ref for parents
-watch(videoRef, (newVal) => {
-    emit('video-ref', newVal);
-});
 </script>
 
 <template>
     <div ref="containerRef" class="flex-1 bg-black relative cursor-grab active:cursor-grabbing h-full w-full overflow-hidden touch-none">
-        <video
-            ref="videoRef"
-            :src="src || undefined"
-            class="hidden"
-            playsinline
-            crossorigin="anonymous"
-            loop
-        />
         <!-- Loading Overlay -->
         <div v-if="isLoading" class="absolute inset-0 flex items-center justify-center z-10 bg-black bg-opacity-50 pointer-events-none">
             <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-blue-500"></div>

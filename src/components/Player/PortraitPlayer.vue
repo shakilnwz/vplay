@@ -2,7 +2,8 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 
 const props = defineProps<{
-    src: string | null;
+    videoElement: HTMLVideoElement | null;
+    videoPlayer: any;
     isLoading: boolean;
     error: string | null;
     currentVideo: File | null;
@@ -12,14 +13,13 @@ const props = defineProps<{
 
 const emit = defineEmits<{
     (e: 'retry'): void;
-    (e: 'video-ref', node: HTMLVideoElement | null): void;
     (e: 'load-video', file: File): void;
     (e: 'interact'): void;
     (e: 'ui-lock-change', locked: boolean): void;
 }>();
 
-const videoRef = ref<HTMLVideoElement | null>(null);
 const containerRef = ref<HTMLDivElement | null>(null);
+const videoContainerRef = ref<HTMLDivElement | null>(null);
 
 // Transform state for pan/zoom
 const transform = ref({ x: 0, y: 0, scale: 1 });
@@ -100,12 +100,12 @@ const resetTransform = () => {
 
 // Calculate max pan offset based on video and container dimensions
 const calculateMaxPanOffset = () => {
-    if (!videoRef.value || !containerRef.value) return 0;
+    if (!props.videoElement || !containerRef.value) return 0;
     
     // In fit-screen mode, no panning needed as video fits entirely
     if (currentViewMode.value === 'fit-screen') return 0;
     
-    const video = videoRef.value;
+    const video = props.videoElement;
     const container = containerRef.value;
     
     // Get video display dimensions
@@ -279,11 +279,6 @@ const handleWheel = (e: WheelEvent) => {
     }
 };
 
-// Watch video ref for parent
-watch(videoRef, (newVal) => {
-    emit('video-ref', newVal);
-});
-
 // Handle double tap to reset zoom
 let lastTap = 0;
 const handleTap = () => {
@@ -294,25 +289,39 @@ const handleTap = () => {
     lastTap = now;
 };
 
-onMounted(() => {
-    if (containerRef.value) {
-        containerRef.value.addEventListener('wheel', handleWheel, { passive: false });
-    }
-});
-
-
-
-// Video controls for portrait mode
-const isPlaying = ref(false);
-const currentTime = ref(0);
-const duration = ref(0);
-const volume = ref(1);
-const isMuted = ref(false);
+// Video controls binding from parent
+const {
+    isPlaying,
+    volume,
+    currentTime,
+    duration,
+    isMuted
+} = props.videoPlayer;
 
 // UI visibility and locking
 const isUiVisible = ref(true);
 let uiHideTimeout: number | null = null;
 const UI_HIDE_DELAY = 3000;
+
+// Fullscreen State and Handlers
+const isFullscreen = ref(false);
+
+const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen({ navigationUI: 'hide' }).catch(err => {
+            console.log('Fullscreen error:', err);
+        });
+    } else {
+        document.exitFullscreen().catch(err => {
+            console.log('Exit fullscreen error:', err);
+        });
+    }
+    showUI();
+};
+
+const handleFullscreenChange = () => {
+    isFullscreen.value = !!document.fullscreenElement;
+};
 
 // Show UI and reset auto-hide timer
 const showUI = (force = false) => {
@@ -341,37 +350,18 @@ const toggleUiLock = () => {
     emit('ui-lock-change', newLockState);
 };
 
-const togglePlay = () => {
-    if (videoRef.value) {
-        if (isPlaying.value) {
-            videoRef.value.pause();
-        } else {
-            videoRef.value.play();
-        }
-    }
+const handleTogglePlay = () => {
+    props.videoPlayer.togglePlay();
     showUI();
 };
 
-const handleSeek = (newTime: number) => {
-    currentTime.value = newTime;
-    if (videoRef.value) {
-        videoRef.value.currentTime = newTime;
-    }
+const handleSeekTime = (newTime: number) => {
+    props.videoPlayer.handleSeek(newTime);
     showUI();
 };
 
-const handleVolumeChange = (newVolume: number) => {
-    volume.value = newVolume;
-    if (videoRef.value) {
-        videoRef.value.volume = newVolume;
-    }
-};
-
-const toggleMute = () => {
-    if (videoRef.value) {
-        isMuted.value = !isMuted.value;
-        videoRef.value.muted = isMuted.value;
-    }
+const handleToggleMute = () => {
+    props.videoPlayer.toggleMute();
     showUI();
 };
 
@@ -381,28 +371,37 @@ const formatTime = (seconds: number) => {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
 };
 
-// Watch video element for events
-watch(videoRef, (newVal) => {
-    if (newVal) {
-        newVal.addEventListener('play', () => {
-            isPlaying.value = true;
-            showUI();
-        });
-        newVal.addEventListener('pause', () => {
-            isPlaying.value = false;
-            isUiVisible.value = true;
-            if (uiHideTimeout) {
-                window.clearTimeout(uiHideTimeout);
-            }
-        });
-        newVal.addEventListener('timeupdate', () => currentTime.value = newVal.currentTime);
-        newVal.addEventListener('loadedmetadata', () => {
-            duration.value = newVal.duration;
-            // Reset view mode and transform when video loads
-            currentViewMode.value = 'fit-height';
-            transform.value = { x: 0, y: 0, scale: 1 };
-        });
+// Mount video element inside zoom container and manage dynamic classes
+watch([() => props.videoElement, videoContainerRef, currentViewMode], () => {
+    const video = props.videoElement;
+    const container = videoContainerRef.value;
+    if (!video || !container) return;
+    
+    if (!container.contains(video)) {
+        container.appendChild(video);
     }
+    
+    // Setup classes
+    video.className = ""; // clear
+    video.classList.add('transition-all', 'duration-300');
+    if (currentViewMode.value === 'fit-screen') {
+        video.classList.add('max-w-full', 'max-h-full', 'object-contain');
+    } else {
+        video.classList.add('h-full', 'w-auto', 'max-w-none', 'object-cover');
+    }
+}, { immediate: true });
+
+// Watch current video to reset state on load
+watch(() => props.currentVideo, () => {
+    currentViewMode.value = 'fit-height';
+    transform.value = { x: 0, y: 0, scale: 1 };
+});
+
+onMounted(() => {
+    if (containerRef.value) {
+        containerRef.value.addEventListener('wheel', handleWheel, { passive: false });
+    }
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
 });
 
 onUnmounted(() => {
@@ -411,6 +410,11 @@ onUnmounted(() => {
     }
     if (uiHideTimeout) {
         window.clearTimeout(uiHideTimeout);
+    }
+    document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    // Return video element to parent's body or let App.vue handle it
+    if (props.videoElement && videoContainerRef.value?.contains(props.videoElement)) {
+        videoContainerRef.value.removeChild(props.videoElement);
     }
 });
 </script>
@@ -432,19 +436,8 @@ onUnmounted(() => {
                 transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`
             }"
         >
-            <video
-                ref="videoRef"
-                :src="src || undefined"
-                :class="[
-                    'transition-all duration-300',
-                    currentViewMode === 'fit-screen' 
-                        ? 'max-w-full max-h-full object-contain' 
-                        : 'h-full w-auto max-w-none object-cover'
-                ]"
-                playsinline
-                autoplay
-                loop
-            />
+            <!-- DOM node for shared persistent video element is appended here -->
+            <div ref="videoContainerRef" class="w-full h-full flex items-center justify-center pointer-events-none" />
         </div>
 
         <!-- Loading Overlay -->
@@ -467,24 +460,28 @@ onUnmounted(() => {
             </div>
         </div>
 
-        <!-- Navigation Hints -->
-        <div v-if="videos.length > 1 && !props.isUiLocked" class="absolute right-4 top-1/2 -translate-y-1/2 flex flex-col gap-2 z-10 pointer-events-none">
-            <div 
+        <!-- Navigation Buttons (Interactive & Clickable) -->
+        <div v-if="videos.length > 1 && !props.isUiLocked" class="absolute right-4 top-1/2 -translate-y-1/2 flex flex-col gap-3 z-10">
+            <button 
                 v-if="hasPrev"
-                class="w-10 h-10 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center"
+                @click.stop="loadPrev"
+                class="w-11 h-11 rounded-full bg-black/40 border border-white/10 hover:bg-blue-600 active:scale-95 text-white backdrop-blur-sm flex items-center justify-center transition cursor-pointer shadow-lg"
+                title="Previous Video"
             >
-                <svg class="w-6 h-6 text-white/60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" />
                 </svg>
-            </div>
-            <div 
+            </button>
+            <button 
                 v-if="hasNext"
-                class="w-10 h-10 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center"
+                @click.stop="loadNext"
+                class="w-11 h-11 rounded-full bg-black/40 border border-white/10 hover:bg-blue-600 active:scale-95 text-white backdrop-blur-sm flex items-center justify-center transition cursor-pointer shadow-lg"
+                title="Next Video"
             >
-                <svg class="w-6 h-6 text-white/60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
                 </svg>
-            </div>
+            </button>
         </div>
 
         <!-- Zoom indicator -->
@@ -530,7 +527,7 @@ onUnmounted(() => {
                     min="0" 
                     :max="duration || 0" 
                     :value="currentTime"
-                    @input="handleSeek(parseFloat(($event.target as HTMLInputElement).value)); showUI()"
+                    @input="handleSeekTime(parseFloat(($event.target as HTMLInputElement).value))"
                     class="flex-1 h-1.5 bg-white/30 rounded-full appearance-none cursor-pointer accent-blue-500"
                 />
                 <span class="text-xs font-mono text-gray-300 w-10">{{ formatTime(duration) }}</span>
@@ -540,7 +537,7 @@ onUnmounted(() => {
             <div class="flex items-center justify-center gap-4">
                 <!-- Play/Pause -->
                 <button 
-                    @click="togglePlay"
+                    @click="handleTogglePlay"
                     class="p-3 rounded-full bg-blue-600 hover:bg-blue-500 text-white transition-colors"
                 >
                     <svg v-if="isPlaying" class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
@@ -551,20 +548,31 @@ onUnmounted(() => {
                     </svg>
                 </button>
 
-                <!-- Mute Toggle -->
-                <button 
-                    @click="toggleMute"
-                    class="p-3 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
-                    :class="{ 'bg-blue-600 hover:bg-blue-500': isMuted }"
-                    title="Toggle Mute"
-                >
-                    <svg v-if="!isMuted" class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                        <path fill-rule="evenodd" d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.707.707L4.586 13H2a1 1 0 01-1-1V8a1 1 0 011-1h2.586l3.707-3.707a1 1 0 011.09-.217zM14.657 2.929a1 1 0 011.414 0A9.972 9.972 0 0119 10a9.972 9.972 0 01-2.929 7.071 1 1 0 01-1.414-1.414A7.971 7.971 0 0017 10c0-2.21-.894-4.208-2.343-5.657a1 1 0 010-1.414zm-2.829 2.828a1 1 0 011.415 0A5.983 5.983 0 0115 10a5.984 5.984 0 01-1.757 4.243 1 1 0 01-1.415-1.415A3.984 3.984 0 0013 10a3.983 3.983 0 00-1.172-2.828 1 1 0 010-1.415z" clip-rule="evenodd" />
-                    </svg>
-                    <svg v-else class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                        <path fill-rule="evenodd" d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.707.707L4.586 13H2a1 1 0 01-1-1V8a1 1 0 011-1h2.586l3.707-3.707a1 1 0 011.09-.217zM12.293 7.293a1 1 0 011.414 0L15 8.586l1.293-1.293a1 1 0 111.414 1.414L16.414 10l1.293 1.293a1 1 0 01-1.414 1.414L15 11.414l-1.293 1.293a1 1 0 01-1.414-1.414L13.586 10l-1.293-1.293a1 1 0 010-1.414z" clip-rule="evenodd" />
-                    </svg>
-                </button>
+                <!-- Mute & Volume Controller Pill -->
+                <div class="flex items-center gap-2 bg-white/10 hover:bg-white/15 px-3 py-1.5 rounded-full transition">
+                    <button 
+                        @click="handleToggleMute"
+                        class="text-white hover:text-blue-400 transition-colors"
+                        :class="{ 'text-blue-500': isMuted }"
+                        title="Toggle Mute"
+                    >
+                        <svg v-if="!isMuted" class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.707.707L4.586 13H2a1 1 0 01-1-1V8a1 1 0 011-1h2.586l3.707-3.707a1 1 0 011.09-.217zM14.657 2.929a1 1 0 011.414 0A9.972 9.972 0 0119 10a9.972 9.972 0 01-2.929 7.071 1 1 0 01-1.414-1.414A7.971 7.971 0 0017 10c0-2.21-.894-4.208-2.343-5.657a1 1 0 010-1.414zm-2.829 2.828a1 1 0 011.415 0A5.983 5.983 0 0115 10a5.984 5.984 0 01-1.757 4.243 1 1 0 01-1.415-1.415A3.984 3.984 0 0013 10a3.983 3.983 0 00-1.172-2.828 1 1 0 010-1.415z" clip-rule="evenodd" />
+                        </svg>
+                        <svg v-else class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.707.707L4.586 13H2a1 1 0 01-1-1V8a1 1 0 011-1h2.586l3.707-3.707a1 1 0 011.09-.217zM12.293 7.293a1 1 0 011.414 0L15 8.586l1.293-1.293a1 1 0 111.414 1.414L16.414 10l1.293 1.293a1 1 0 01-1.414 1.414L15 11.414l-1.293 1.293a1 1 0 01-1.414-1.414L13.586 10l-1.293-1.293a1 1 0 010-1.414z" clip-rule="evenodd" />
+                        </svg>
+                    </button>
+                    <input 
+                        type="range" 
+                        min="0" 
+                        max="1" 
+                        step="0.1" 
+                        :value="isMuted ? 0 : volume"
+                        @input="props.videoPlayer.handleVolumeChange(parseFloat(($event.target as HTMLInputElement).value))"
+                        class="w-16 sm:w-20 h-1 bg-white/30 rounded-full appearance-none cursor-pointer accent-blue-500"
+                    />
+                </div>
 
                 <!-- Reset View -->
                 <button 
@@ -585,6 +593,21 @@ onUnmounted(() => {
                     <!-- Mode 3: Keep Zoom Center - Reset Icon -->
                     <svg v-else class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                </button>
+
+                <!-- Fullscreen Toggle -->
+                <button 
+                    @click="toggleFullscreen"
+                    class="p-3 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
+                    :class="{ 'bg-blue-600 hover:bg-blue-500': isFullscreen }"
+                    :title="isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'"
+                >
+                    <svg v-if="!isFullscreen" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                    </svg>
+                    <svg v-else class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 10h6V4m0 6l-7-7m17 7h-6V4m0 6l7-7M4 14h6v6m0-6l-7 7m17-7h-6v6m0-6l7 7" />
                     </svg>
                 </button>
 
