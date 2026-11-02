@@ -92,6 +92,84 @@ export function useFileHandler() {
         extractVideoMetadata(file);
     };
 
+    const loadVideoUrl = (url: string, title?: string) => {
+        const cleanUrl = url.trim();
+        if (!cleanUrl) return;
+        error.value = null;
+        isLoadingVideo.value = true;
+        const name = title || cleanUrl.split('/').pop()?.split('?')[0] || 'Web Stream Video';
+        const file = new File([], name, { type: 'video/mp4' });
+        Object.defineProperty(file, 'streamUrl', {
+            value: cleanUrl,
+            writable: false
+        });
+        currentVideo.value = file;
+    };
+
+    const sampleVideos = [
+        {
+            title: 'Big Buck Bunny (Sample)',
+            url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4'
+        },
+        {
+            title: 'Elephants Dream (Sample)',
+            url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4'
+        }
+    ];
+
+    const loadSampleVideo = (index: number = 0) => {
+        const sample = sampleVideos[index] || sampleVideos[0];
+        loadVideoUrl(sample.url, sample.title);
+    };
+
+    const handleOpenFilePicker = async () => {
+        if ('showOpenFilePicker' in window) {
+            try {
+                error.value = null;
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const fileHandles = await (window as any).showOpenFilePicker({
+                    multiple: true,
+                    types: [
+                        {
+                            description: 'Video Files',
+                            accept: {
+                                'video/*': ['.mp4', '.webm', '.ogv', '.mov', '.mkv', '.avi', '.m4v', '.flv', '.wmv', '.ts']
+                            }
+                        }
+                    ]
+                });
+                const selectedFiles: File[] = [];
+                for (const handle of fileHandles) {
+                    try {
+                        const file = await handle.getFile();
+                        if (isVideoFile(file)) {
+                            selectedFiles.push(file);
+                        }
+                    } catch {
+                        // skip unreadable
+                    }
+                }
+                if (selectedFiles.length > 0) {
+                    videos.value = selectedFiles;
+                    loadVideo(selectedFiles[0]);
+                }
+            } catch (err: any) {
+                if (err.name !== 'AbortError') {
+                    console.error('File picker error:', err);
+                }
+            }
+        } else {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.multiple = true;
+            input.accept = 'video/*,.mp4,.webm,.ogv,.mov,.mkv,.avi,.m4v,.flv,.wmv';
+            input.addEventListener('change', (event: Event) => {
+                handleFileSelect(event);
+            });
+            input.click();
+        }
+    };
+
     const handleFileSelect = async (event: Event) => {
         const target = event.target as HTMLInputElement;
         const files = Array.from(target.files || []);
@@ -228,6 +306,10 @@ export function useFileHandler() {
         error,
         handleFileSelect,
         handleDirectoryPicker,
-        loadVideo
+        handleOpenFilePicker,
+        loadVideo,
+        loadVideoUrl,
+        loadSampleVideo,
+        sampleVideos
     };
 }

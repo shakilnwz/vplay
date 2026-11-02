@@ -1,426 +1,170 @@
-# Mobile-Friendly 3D to 2D Video Player - Implementation Plan
+# VR Player: Dual-Platform (Go/Gio Native Android + Web) Implementation Plan
 
 ## Project Overview
-Build a mobile-friendly 3D to 2D video player that supports SBS (Side-by-Side) 360° videos with directory-based file selection, touch controls, and gyroscope integration.
 
-## Current State Analysis
+Build and maintain a high-performance, mobile-friendly 3D to 2D VR video player supporting SBS (Side-by-Side) 360°, 180°, and flat videos across two complementary platforms:
 
-### Existing Features
-- ✅ Three.js 360° video rendering with sphere geometry
-- ✅ SBS to equirectangular shader conversion (left eye only)
-- ✅ Touch controls for mobile swipe navigation
-- ✅ Gyroscope controls with iOS 13+ permission handling
-- ✅ Mouse drag controls for desktop
-- ✅ Basic video playback controls (play/pause, volume, seek)
-- ✅ Responsive layout with Tailwind CSS
-- ✅ File input with webkitdirectory attribute (but not working)
+1. **Android Native App (`android/`)**: Built in **Go** using **Gio UI (`gioui.org`)**, compiled and packaged via **`gogio` (`gioui.org/cmd/gogio`)**. Delivers hardware-accelerated video decoding (4K/8K 60fps via Android MediaCodec + `SurfaceTexture`), zero-latency head tracking (NDK `ASensorManager`), native Storage Access Framework (SAF) folder browsing, and an immediate-mode GPU user interface.
+2. **Web App (`src/`)**: Built with **Vue 3 + TypeScript + Three.js + Tailwind CSS + Vite**. Provides instant browser playback, desktop support, WebXR compatibility, and zero-install link sharing.
 
-### Current Issues
-- ❌ File chooser with `webkitdirectory` is not functioning properly
-- ❌ No directory path input capability
-- ❌ Limited file listing (no sorting/filtering)
-- ❌ Auto-detect orientation not implemented
-- ❌ No mobile-specific optimizations (orientation locking)
+---
 
-## Implementation Plan
-
-### Phase 1: Fix File Selection Issues
-
-#### Task 1.1: Fix File Input with Directory Support
-**File:** `src/App.tsx:334-342`
-
-**Current Issue:**
-- File input uses `webkitdirectory` but it's not working reliably
-- The `accept="all"` attribute is too broad
-
-**Actions:**
-- Replace single file input with dual approach:
-  1. Directory picker using `webkitdirectory` attribute with proper event handling
-  2. Alternative file picker for individual video files
-- Add proper error handling for file access permissions
-- Add loading state during file scanning
-
-**Code Changes:**
-```tsx
-// Replace current handleFileSelect with directory-aware handler
-const handleDirectorySelect = async (event) => {
-    const files = Array.from(event.target.files);
-    const videoFiles = files.filter(file => 
-        file.type.startsWith('video/') || 
-        file.name.match(/\.(mp4|webm|ogv|mov|mkv)$/i)
-    );
-    setVideos(videoFiles);
-    if (videoFiles.length > 0 && !currentVideo) {
-        loadVideo(videoFiles[0]);
-    }
-};
-```
-
-#### Task 1.2: Add Directory Path Input Field
-**File:** `src/App.tsx` (add new state and UI)
-
-**Actions:**
-- Add text input for manual directory path entry
-- Add "Scan Directory" button
-- Implement file system API to read directory contents (Web File System Access API)
-
-**New State:**
-```tsx
-const [directoryPath, setDirectoryPath] = useState('');
-const [isScanning, setIsScanning] = useState(false);
-```
-
-**API Considerations:**
-- Use `window.showDirectoryPicker()` for modern browsers (Chrome/Edge)
-- Fallback to traditional file input with directory support for Firefox/Safari
-- Note: File System Access API is Chrome-only, need graceful degradation
-
-### Phase 2: Enhanced File Management
-
-#### Task 2.1: Implement File Sorting
-**File:** `src/App.tsx` (new state and functions)
-
-**Actions:**
-- Add sort state: `sortOrder` ('name', 'size', 'date', 'duration')
-- Add sort direction: `sortDirection` ('asc', 'desc')
-- Create `sortVideos` utility function
-
-**Code Structure:**
-```tsx
-const [sortOrder, setSortOrder] = useState('name');
-const [sortDirection, setSortDirection] = useState('asc');
-
-const sortVideos = (videos, order, direction) => {
-    return [...videos].sort((a, b) => {
-        // Sort logic based on order
-    });
-};
-```
-
-#### Task 2.2: Implement File Filtering
-**File:** `src/App.tsx` (new state and functions)
-
-**Actions:**
-- Add filter state: `filterQuery` (search string)
-- Add extension filter: `filterExtension` ('all', 'mp4', 'webm', etc.)
-- Create `filterVideos` utility function
-
-**New State:**
-```tsx
-const [filterQuery, setFilterQuery] = useState('');
-const [filterExtension, setFilterExtension] = useState('all');
-```
-
-#### Task 2.3: Add File Metadata Extraction
-**File:** `src/App.tsx` (new utility)
-
-**Actions:**
-- Extract video duration on load
-- Extract video resolution
-- Cache metadata for better performance
-
-**Code:**
-```tsx
-const extractVideoMetadata = async (file) => {
-    return new Promise((resolve) => {
-        const video = document.createElement('video');
-        video.preload = 'metadata';
-        video.onloadedmetadata = () => {
-            resolve({
-                duration: video.duration,
-                width: video.videoWidth,
-                height: video.videoHeight
-            });
-            URL.revokeObjectURL(video.src);
-        };
-        video.src = URL.createObjectURL(file);
-    });
-};
-```
-
-### Phase 3: Mobile Optimization
-
-#### Task 3.1: Auto-Detect Device Orientation
-**File:** `src/App.tsx` (new state and useEffect)
-
-**Actions:**
-- Add state to track current orientation
-- Listen to `resize` and `orientationchange` events
-- Adjust camera FOV and sphere radius based on orientation
-- Optimize touch interaction areas
-
-**Code Structure:**
-```tsx
-const [orientation, setOrientation] = useState('portrait');
-
-useEffect(() => {
-    const updateOrientation = () => {
-        setOrientation(window.innerWidth > window.innerHeight ? 'landscape' : 'portrait');
-    };
-    
-    updateOrientation();
-    window.addEventListener('resize', updateOrientation);
-    window.addEventListener('orientationchange', updateOrientation);
-    
-    return () => {
-        window.removeEventListener('resize', updateOrientation);
-        window.removeEventListener('orientationchange', updateOrientation);
-    };
-}, []);
-```
-
-#### Task 3.2: Add Orientation Lock Option
-**File:** `src/App.tsx` (new button and Screen Orientation API)
-
-**Actions:**
-- Add toggle button for orientation lock
-- Use Screen Orientation API (`screen.orientation.lock()`)
-- Handle API not supported (fallback to CSS transform)
-
-**Code:**
-```tsx
-const toggleOrientationLock = async () => {
-    try {
-        await screen.orientation.lock('landscape');
-    } catch (error) {
-        console.log('Orientation lock not supported or denied');
-    }
-};
-```
-
-#### Task 3.3: Mobile UI Enhancements
-**File:** `src/App.tsx` (CSS and layout changes)
-
-**Actions:**
-- Make sidebar collapsible on mobile (drawer pattern)
-- Increase touch target sizes (minimum 44x44px)
-- Add mobile-specific control bar at bottom
-- Hide non-essential controls on small screens
-- Add gesture hints overlay
-
-**Layout Changes:**
-```tsx
-// Mobile-responsive sidebar
-<div className={`${isMobile ? 'fixed inset-0 z-50 transform' : 'w-80'} ...`}>
-```
-
-### Phase 4: Video Player Enhancements
-
-#### Task 4.1: Improve SBS Shader
-**File:** `src/App.tsx:73-100` (ShaderMaterial)
-
-**Current Issue:**
-- Only extracts left eye
-- No support for different SBS formats (horizontal vs vertical)
-- No aspect ratio correction
-
-**Actions:**
-- Add uniform for SBS format (horizontal vs vertical)
-- Add aspect ratio correction
-- Improve edge handling
-
-**Enhanced Shader:**
-```glsl
-uniform sampler2D map;
-uniform float isSBS;
-uniform float sbsFormat; // 0 = horizontal, 1 = vertical
-varying vec2 vUv;
-
-void main() {
-    vec2 uv = vUv;
-    if (isSBS > 0.5) {
-        if (sbsFormat < 0.5) {
-            // Horizontal SBS - take left half
-            uv.x = uv.x * 0.5;
-        } else {
-            // Vertical SBS - take top half
-            uv.y = uv.y * 0.5;
-        }
-    }
-    gl_FragColor = texture2D(map, uv);
-}
-```
-
-#### Task 4.2: Add View Mode Toggle
-**File:** `src/App.tsx` (already has `viewMode` state, needs implementation)
-
-**Actions:**
-- Implement 'flat' mode (2D view)
-- Switch between 360° sphere and flat video plane
-- Add UI toggle button
-
-**Code Structure:**
-```tsx
-// Update sphere geometry based on view mode
-useEffect(() => {
-    if (viewMode === 'flat' && sphereRef.current) {
-        // Switch to plane geometry
-    } else {
-        // Use sphere geometry
-    }
-}, [viewMode]);
-```
-
-#### Task 4.3: Add Playback Speed Control
-**File:** `src/App.tsx` (new state and controls)
-
-**Actions:**
-- Add playback speed state: `playbackSpeed` (0.25, 0.5, 0.75, 1, 1.25, 1.5, 2)
-- Add speed control UI (dropdown or buttons)
-- Update video element playbackRate
-
-### Phase 5: Performance & UX Improvements
-
-#### Task 5.1: Add Loading States
-**File:** `src/App.tsx` (new state and UI)
-
-**Actions:**
-- Add `isLoadingVideo` state
-- Show spinner overlay during video loading
-- Add progress indicator for directory scanning
-
-#### Task 5.2: Add Error Handling
-**File:** `src/App.tsx` (new state and error UI)
-
-**Actions:**
-- Add `error` state
-- Catch video loading errors
-- Display user-friendly error messages
-- Add retry button
-
-**Code:**
-```tsx
-const [error, setError] = useState(null);
-
-const handleVideoError = (e) => {
-    setError('Failed to load video. Please try another file.');
-    setIsPlaying(false);
-};
-```
-
-#### Task 5.3: Add Keyboard Shortcuts
-**File:** `src/App.tsx` (new useEffect)
-
-**Actions:**
-- Space: Play/Pause
-- Arrow keys: Seek
-- M: Mute/Unmute
-- F: Fullscreen
-- S: Toggle view mode (360/flat)
-
-#### Task 5.4: Add Fullscreen Support
-**File:** `src/App.tsx` (new button and API)
-
-**Actions:**
-- Add fullscreen button
-- Use Fullscreen API
-- Handle fullscreen change events
-
-### Phase 6: Testing & Refinement
-
-#### Task 6.1: Test on Different Devices
-- Desktop browsers: Chrome, Firefox, Safari, Edge
-- Mobile browsers: Chrome Mobile, Safari iOS, Samsung Internet
-- Test touch interactions
-- Test gyroscope permissions on iOS
-
-#### Task 6.2: Test Video Formats
-- Test various SBS videos (different resolutions)
-- Test large video files
-- Test video files with different codecs
-
-#### Task 6.3: Performance Optimization
-- Profile Three.js rendering
-- Optimize sphere geometry segment count based on device capability
-- Implement LOD (Level of Detail) if needed
-
-#### Task 6.4: Accessibility
-- Add ARIA labels to controls
-- Ensure keyboard navigation works
-- Add screen reader support for video list
-
-## File Structure After Implementation
+## Architecture & Subsystems
 
 ```
-src/
-├── components/
-│   ├── VideoPlayer.tsx      # Extract video player logic
-│   ├── VideoList.tsx        # File list component
-│   ├── Controls.tsx         # Playback controls
-│   └── Sidebar.tsx          # Collapsible sidebar
-├── utils/
-│   ├── fileUtils.ts         # File handling utilities
-│   ├── videoUtils.ts        # Video metadata extraction
-│   └── sortUtils.ts         # Sorting/filtering logic
-├── hooks/
-│   ├── useGyroscope.ts      # Gyroscope hook
-│   ├── useVideoControls.ts  # Video controls hook
-│   └── useFilePicker.ts     # File picker hook
-├── types/
-│   └── index.ts             # TypeScript definitions
-├── App.tsx                  # Main app (simplified)
-├── main.tsx
-└── index.css
+vr-player/
+├── android/                         # Go + Gio Native Android App
+│   ├── cmd/
+│   │   └── vrplayer/                # Main entrypoint for gogio
+│   │       ├── main.go              # Gio window loop & event orchestration
+│   │       ├── appicon.png          # App icon
+│   │       └── AndroidManifest.xml  # Manifest overrides (GLES 3.0, WAKE_LOCK)
+│   ├── pkg/
+│   │   ├── appstate/                # Playback status, settings persistence
+│   │   ├── ui/                      # Gio immediate-mode UI (controls, playlist, theme)
+│   │   ├── render/                  # 3D Sphere, 180° Dome, Flat Plane, MVP matrix
+│   │   ├── shader/                  # GLES 3.0 SBS shader (OES external texture)
+│   │   ├── video/                   # Hardware MediaCodec / SurfaceTexture bridge
+│   │   ├── sensor/                  # NDK ASensorManager rotation vector (Cgo)
+│   │   └── storage/                 # Storage Access Framework (SAF) folder picker
+│   ├── go.mod
+│   └── go.sum
+├── src/                             # Web App (Vue 3 + Three.js)
+│   ├── App.vue
+│   ├── components/
+│   │   ├── Player/                  # VideoPlayer.vue, PortraitPlayer.vue
+│   │   └── UI/                      # Controls.vue, Sidebar.vue, FloatingOverlay.vue
+│   └── hooks/                       # useFileHandler.ts, useVideoPlayer.ts, useViewControls.ts
+├── public/                          # Web assets
+├── NATIVE_ANDROID_CONVERSION_PLAN.md # Detailed Android Native Technical Specification
+└── package.json                     # Web app dependencies & scripts
 ```
 
-## Dependencies to Consider Adding
+---
 
-- `file-saver` - For saving preferences/settings
-- `idb` - IndexedDB wrapper for caching video metadata
-- `use-gesture` - Advanced gesture handling (optional)
+## Dual-Platform Feature Parity
 
-## Browser Compatibility Notes
+| Feature | Android Native (Go + Gio) | Web App (Vue 3 + Three.js) |
+| :--- | :--- | :--- |
+| **Video Decoding** | Hardware MediaCodec (`SurfaceTexture`) | HTML5 `<video>` / browser engine |
+| **3D Rendering** | Custom GLES 3.0 (Sphere/Dome/Plane) | Three.js WebGL (Sphere/Plane) |
+| **SBS Modes** | Horizontal, Vertical, Invert Eye | Horizontal, Vertical, Invert Eye |
+| **View Modes** | 360° Sphere, 180° Dome, Flat 2D, Portrait | 360° Sphere, 180° Dome, Flat 2D, Portrait |
+| **Orientation / Gyro** | NDK `ASensorManager` (Rotation Vector) | Web `DeviceOrientationEvent` |
+| **Touch Controls** | Gio `pointer.InputOp` (drag, pinch, double-tap) | Touch & pointer event listeners |
+| **File Access** | SAF `ACTION_OPEN_DOCUMENT_TREE` | File System Access API + `webkitdirectory` |
+| **UI Design** | Dark theme immediate-mode Gio widgets | Tailwind CSS responsive dark UI |
+| **Packaging** | `gogio` APK / AAB | Vite static build (`yarn build`) / PWA |
 
-### File System Access API
-- ✅ Chrome 86+, Edge 86+
-- ❌ Firefox (not supported, use fallback)
-- ❌ Safari (not supported, use fallback)
+---
 
-### Screen Orientation API
-- ✅ Chrome 38+, Edge 38+
-- ⚠️ Safari 16.4+ (partial support)
-- ❌ Firefox (no support on mobile)
+## Phased Implementation Roadmap
 
-### DeviceOrientation API
-- ⚠️ Requires HTTPS
-- ⚠️ iOS 13+ requires user permission trigger
-- ✅ Most modern mobile browsers support
+### Phase 1: Go & Gio Android Project Foundation
+- [x] Initialize `android/` Go module (`go.mod`).
+- [x] Install and verify `gogio` (`go install gioui.org/cmd/gogio@latest`).
+- [x] Scaffold `android/cmd/vrplayer/main.go` with minimal Gio `app.NewWindow` event loop.
+- [x] Configure `AndroidManifest.xml` with required OpenGL ES 3.0 features and storage permissions.
+- [x] Validate compilation with `gogio -target android -appid com.lerd.vrplayer -o test.apk ./android/cmd/vrplayer`.
 
-## Known Limitations
+### Phase 2: Hardware Video Decoding & GLES 3.0 Pipeline (Android)
+- [x] Implement `android/pkg/video`: Android `SurfaceTexture` creation and JNI/Cgo bridge to `MediaPlayer` / `MediaCodec`.
+- [x] Implement `android/pkg/render/glengine.go`: Setup OpenGL ES 3.0 context within Gio's rendering surface.
+- [x] Implement GLSL ES 3.0 vertex & fragment shaders with `#extension GL_OES_EGL_image_external_essl3 : require`.
+- [x] Implement SBS uniform logic (Horizontal SBS, Vertical SBS, stereo inversion, standard mono).
+- [x] Connect `SurfaceTexture.updateTexImage()` to the render loop for zero-copy 60fps frame streaming.
 
-1. **File System Access API** is Chrome-only - graceful degradation required
-2. **Gyroscope** requires HTTPS on production
-3. **Large video files** may cause memory issues on mobile devices
-4. **iOS** has strict autoplay policies - user interaction required first
-5. **Directory scanning** can be slow for directories with many files
+### Phase 3: 3D Geometries & Camera Navigation (Android)
+- [x] Implement `android/pkg/render/mesh.go`:
+  - 360° Equirectangular sphere mesh (inward normals, UV coordinates).
+  - 180° Dome mesh (front hemisphere).
+  - 2D Flat plane mesh (with aspect-ratio matching).
+- [x] Implement `android/pkg/render/matrix.go`: MVP matrix stack, Euler angles, quaternion camera rotations.
+- [x] Implement MX Player gesture engine in `android/pkg/ui/gestures.go`:
+  - Single-finger drag (in VR 360°/180°): Full 360° panoramic camera navigation (pitch/yaw look-around) with inertia damping.
+  - Left 15% margin vertical swipe: Screen Brightness HUD (0% - 100%).
+  - Right 15% margin vertical swipe: Media Volume HUD (0 - 15 + MX 200% boost).
+  - Center 50% horizontal swipe (in 2D Flat mode): Fast-forward / Rewind seek preview `[+Δt (target)]`.
+  - Seeking in 360° VR mode: Handled via double-tap zones (+/- 10s) and timeline scrubber so 360° drag viewing never accidentally seeks.
+  - Two-finger pinch: Smooth zoom/pan in 2D Flat mode; Camera FOV adjustment (45° - 110°) in VR mode.
+  - Double-tap left/right 20%: YouTube/MX style animated ripple seek (+/- 10s).
+  - Double-tap center: Play / Pause toggle.
+  - Long-press hold: Instant 2x fast-forward preview.
 
-## Success Criteria
+### Phase 4: Head Tracking & Sensor Fusion (Android)
+- [x] Implement `android/pkg/sensor/sensor_android.go`: Cgo integration with NDK `<android/sensor.h>`.
+- [x] Subscribe to `ASENSOR_TYPE_ROTATION_VECTOR` at 100Hz without Java GC pauses.
+- [x] Implement sensor offset calibration (reference point reset when user touches screen or presses "Reset View").
+- [x] Implement quaternion slerp/damping filter to eliminate jitter.
+- [x] Handle orientation locking via JNI call to `Activity.setRequestedOrientation`.
 
-- ✅ User can select a directory and see all video files listed
-- ✅ File list is sortable by name, size, and date
-- ✅ File list is filterable by name and extension
-- ✅ Video plays correctly in 360° SBS mode
-- ✅ Touch controls work smoothly on mobile
-- ✅ Gyroscope controls work on supported devices
-- ✅ Player auto-adapts to portrait/landscape orientation
-- ✅ UI is mobile-friendly with appropriate touch targets
-- ✅ Error handling is robust and user-friendly
-- ✅ Performance is acceptable on mid-range mobile devices
+### Phase 5: Direct MX Player UI & Gesture Engine (No Throwaway UI)
+- [x] Implement cinema dark theme and custom Gio immediate-mode widgets in `android/pkg/ui/theme.go`.
+- [x] Build MX Player OSD (`pkg/ui/overlay.go`) directly in final form (3.5s auto-hide fade):
+  - **Top Bar**: Back button, Marquee auto-scrolling title, `[HW]` decoder badge, Audio track popup, Subtitle selector, Screen Lock toggle, Settings gear.
+  - **Tactile Scrubber**: Thin timeline expanding on touch, buffered range indicator, draggable thumb with timestamp preview bubble, elapsed time vs remaining countdown.
+  - **Transport**: Prev, -10s, Large Center Play/Pause, +10s, Next, Repeat mode.
+  - **Utility Bar**: Aspect ratio cycler (`Fit`, `Stretch`, `Crop`, `100%`), Playback speed popup (`0.5x` - `2.0x`), Fullscreen toggle.
+- [x] Implement MX Player Screen Lock (`pkg/ui/lock.go`):
+  - Complete gesture & touch isolation during viewing.
+  - Subtle floating lock badge with double-tap unlock security.
+- [x] Build Floating VR & Stereoscopic Quick-Bar (`pkg/ui/vrbar.go`):
+  - One-tap toggle between MX 2D Flat mode, 360° Sphere, 180° Dome, and Curved Cinema.
+  - Stereoscopic chips: Mono 2D, SBS Horizontal, SBS Vertical, Swap Eyes (Invert).
+  - Recenter View button (`🎯`) to instantly realign VR camera heading.
 
-## Estimated Effort
+### Phase 6: SAF & MX Player Folder Explorer (`pkg/ui/explorer.go` + `pkg/storage/`)
+- [x] Implement `android/pkg/storage/saf_android.go`: Launch `ACTION_OPEN_DOCUMENT_TREE` with `FLAG_GRANT_PERSISTABLE_URI_PERMISSION`.
+- [x] Traverse directory tree with `DocumentsContract` to index video files.
+- [x] Extract duration, resolution, and thumbnail frames using `MediaMetadataRetriever`.
+- [x] Build MX Player Folder Explorer (`pkg/ui/explorer.go`):
+  - **Folder-First View**: Directories with video counts and `[NEW]` badges.
+  - **Inside Folder View**: Video cards with thumbnails, duration pills, specs badges (`4K`, `60fps`, `SBS`), and watched progress lines.
+  - **Resume Dialog**: "Resume playback from 14:32? [Resume] [Start Over]" with position persistence in config.
+  - Real-time debounced search and sorting (Name, Date, Length, Size).
+- [x] Pass file descriptors (`ParcelFileDescriptor.getFd()`) directly to hardware decoder.
 
-- Phase 1: 4-6 hours
-- Phase 2: 3-4 hours
-- Phase 3: 4-5 hours
-- Phase 4: 3-4 hours
-- Phase 5: 2-3 hours
-- Phase 6: 2-3 hours
+### Phase 7: Web Application Maintenance & File Selection Fix
+- [x] Fix file input in `src/hooks/useFileHandler.ts`:
+  - Implement modern `showDirectoryPicker()` (Chrome/Edge/Brave).
+  - Enhance fallback for `<input type="file" webkitdirectory>` with proper video MIME filtering.
+  - Add text input option for local paths if running in local server mode.
+- [x] Verify SBS shader parity with native shaders (ensure identical stereo offset logic).
+- [x] Verify mobile drawer and touch controls on mobile browsers.
 
-**Total: 18-25 hours**
+### Phase 8: Testing, Verification & Release
+- [x] Validate `gogio` APK packaging for ARM64 and ARMv7 architectures.
+- [x] Test playback on physical Android phones and VR headsets (Oculus Quest / Pico via ADB).
+- [x] Verify 4K 60fps HEVC SBS video performance (frame drops, battery, thermals).
+- [x] Test web app deployment to GitHub Pages / static CDN.
 
-## Next Steps
+---
 
-1. Review and approve this plan
-2. Start with Phase 1 (File Selection Fix)
-3. Test each phase before moving to the next
-4. Iterate based on user feedback
+## Tooling & Environment Setup
+
+### Android Native Build Prerequisites
+```bash
+# Go installation (already installed: Go 1.27.3)
+go version
+
+# Install gogio CLI tool
+go install gioui.org/cmd/gogio@latest
+
+# Ensure Android SDK and NDK are installed and environment variables set
+export ANDROID_HOME=~/Android/Sdk
+export ANDROID_NDK_HOME=$ANDROID_HOME/ndk/<version>
+export PATH=$PATH:$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin
+
+# Build Android APK
+cd android
+gogio -target android -appid com.lerd.vrplayer -minsdk 24 -targetsdk 34 -o vrplayer.apk ./cmd/vrplayer
+```
+
+### Web App Development
+```bash
+# Run web development server
+yarn dev
+
+# Build web application for production
+yarn build
+```

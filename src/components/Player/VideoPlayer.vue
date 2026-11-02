@@ -313,7 +313,7 @@ watch([sphereRef, materialRef, () => props.viewMode, () => props.width, () => pr
         mesh.geometry = new THREE.PlaneGeometry(9 * aspect, 9, 1, 1);
         mesh.position.set(0, 0, -10);
         mesh.scale.set(1, 1, 1);
-        material.uniforms.isSBS.value = 0.0;
+        material.uniforms.isSBS.value = props.isSBS ? 1.0 : 0.0;
     } else if (props.viewMode === '180') {
         mesh.geometry = new THREE.SphereGeometry(500, 60, 40, Math.PI, Math.PI, 0, Math.PI);
         mesh.position.set(0, 0, 0);

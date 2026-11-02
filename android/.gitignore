@@ -1,0 +1,13 @@
+# Go build outputs
+/vrplayer
+*.exe
+*.test
+*.prof
+
+# Android build outputs
+*.apk
+*.aab
+*.aar
+*.so
+*.idsig
+.temp/
