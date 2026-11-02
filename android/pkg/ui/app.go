@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"image"
+	"image/color"
 	"time"
 
 	"gioui.org/layout"
@@ -119,16 +120,55 @@ func (a *App) Layout(gtx layout.Context) layout.Dimensions {
 	)
 }
 
-// layoutViewportPlaceholder displays placeholder info until GLES texture pipeline is bound.
+// layoutViewportPlaceholder displays interactive VR panorama grid and horizon indicators.
 func (a *App) layoutViewportPlaceholder(gtx layout.Context) layout.Dimensions {
+	size := gtx.Constraints.Max
+	centerY := float32(size.Y) / 2.0
+
+	// Draw interactive VR horizon line responding to pitch tilt
+	if a.State.ViewMode == appstate.ViewMode360 || a.State.ViewMode == appstate.ViewMode180 {
+		horizonY := int(centerY - a.State.Pitch*200.0)
+		if horizonY >= 0 && horizonY < size.Y {
+			defer clip.Rect{
+				Min: image.Point{X: 0, Y: horizonY},
+				Max: image.Point{X: size.X, Y: horizonY + 1},
+			}.Push(gtx.Ops).Pop()
+			paint.Fill(gtx.Ops, color.NRGBA{R: 59, G: 130, B: 246, A: 60})
+		}
+	}
+
 	return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		title := "VR Player"
 		if a.State.CurrentVideo != nil && a.State.CurrentVideo.Title != "" {
 			title = a.State.CurrentVideo.Title
 		}
-		lbl := material.H5(a.Theme, title)
-		lbl.Color = ColorTextPrimary
-		return lbl.Layout(gtx)
+
+		return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle}.Layout(gtx,
+			// Reticle Crosshair
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				lbl := material.H4(a.Theme, "┼")
+				lbl.Color = color.NRGBA{R: 59, G: 130, B: 246, A: 120}
+				return lbl.Layout(gtx)
+			}),
+			layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
+			// Video Title
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				lbl := material.H6(a.Theme, title)
+				lbl.Color = ColorTextPrimary
+				return lbl.Layout(gtx)
+			}),
+			layout.Rigid(layout.Spacer{Height: unit.Dp(6)}.Layout),
+			// Real-time VR Look Angle HUD
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				yawDeg := a.State.Yaw * 180.0 / 3.14159
+				pitchDeg := a.State.Pitch * 180.0 / 3.14159
+				infoStr := fmt.Sprintf("Yaw: %.0f° | Pitch: %.0f° | FOV: %.0f° | %s",
+					yawDeg, pitchDeg, a.State.CameraFOV, a.State.ViewMode)
+				lbl := material.Caption(a.Theme, infoStr)
+				lbl.Color = ColorTextSecondary
+				return lbl.Layout(gtx)
+			}),
+		)
 	})
 }
 

@@ -19,8 +19,14 @@ type Overlay struct {
 	// Top Bar
 	btnBack     widget.Clickable
 	btnDecoder  widget.Clickable
+	btnAudio    widget.Clickable
+	btnSub      widget.Clickable
 	btnLock     widget.Clickable
 	btnSettings widget.Clickable
+
+	// Settings modal
+	showSettingsModal bool
+	btnCloseSettings  widget.Clickable
 
 	// Transport
 	btnPlayPause widget.Clickable
@@ -60,18 +66,28 @@ func NewOverlay() *Overlay {
 func (o *Overlay) Layout(gtx layout.Context, th *material.Theme, state *appstate.AppState) layout.Dimensions {
 	o.handleEvents(gtx, state)
 
-	return layout.Flex{Axis: layout.Vertical, Spacing: layout.SpaceBetween}.Layout(gtx,
-		// 1. Top Bar
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return o.layoutTopBar(gtx, th, state)
+	return layout.Stack{}.Layout(gtx,
+		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{Axis: layout.Vertical, Spacing: layout.SpaceBetween}.Layout(gtx,
+				// 1. Top Bar
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return o.layoutTopBar(gtx, th, state)
+				}),
+				// 2. Middle Spacer
+				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					return layout.Dimensions{}
+				}),
+				// 3. Bottom Controls Container
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return o.layoutBottomContainer(gtx, th, state)
+				}),
+			)
 		}),
-		// 2. Middle Spacer
-		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+			if o.showSettingsModal {
+				return o.layoutSettingsModal(gtx, th, state)
+			}
 			return layout.Dimensions{}
-		}),
-		// 3. Bottom Controls Container
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return o.layoutBottomContainer(gtx, th, state)
 		}),
 	)
 }
@@ -85,6 +101,21 @@ func (o *Overlay) handleEvents(gtx layout.Context, state *appstate.AppState) {
 	}
 	if o.btnLock.Clicked(gtx) {
 		state.SetLocked(true)
+	}
+	if o.btnAudio.Clicked(gtx) {
+		state.TouchActivity()
+		state.IsMuted = !state.IsMuted
+	}
+	if o.btnSub.Clicked(gtx) {
+		state.TouchActivity()
+	}
+	if o.btnSettings.Clicked(gtx) {
+		state.TouchActivity()
+		o.showSettingsModal = !o.showSettingsModal
+	}
+	if o.btnCloseSettings.Clicked(gtx) {
+		state.TouchActivity()
+		o.showSettingsModal = false
 	}
 	if o.btnPlayPause.Clicked(gtx) {
 		state.TogglePlayPause()
@@ -237,11 +268,45 @@ func (o *Overlay) layoutTopBar(gtx layout.Context, th *material.Theme, state *ap
 							)
 						})
 					}),
+					// Audio Track Pill
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							return material.Clickable(gtx, &o.btnAudio, func(gtx layout.Context) layout.Dimensions {
+								text := "Audio"
+								if state.IsMuted {
+									text = "Muted"
+								}
+								lbl := material.Caption(th, text)
+								lbl.Color = ColorTextSecondary
+								return lbl.Layout(gtx)
+							})
+						})
+					}),
+					// Subtitle Pill
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							return material.Clickable(gtx, &o.btnSub, func(gtx layout.Context) layout.Dimensions {
+								lbl := material.Caption(th, "Sub")
+								lbl.Color = ColorTextSecondary
+								return lbl.Layout(gtx)
+							})
+						})
+					}),
 					// Lock Button
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Left: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 							return material.Clickable(gtx, &o.btnLock, func(gtx layout.Context) layout.Dimensions {
 								lbl := material.Body1(th, "🔒")
+								return lbl.Layout(gtx)
+							})
+						})
+					}),
+					// Settings Button
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return layout.Inset{Left: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							return material.Clickable(gtx, &o.btnSettings, func(gtx layout.Context) layout.Dimensions {
+								lbl := material.Body1(th, "⚙")
+								lbl.Color = ColorTextSecondary
 								return lbl.Layout(gtx)
 							})
 						})
@@ -395,4 +460,74 @@ func formatDuration(d time.Duration) string {
 		return fmt.Sprintf("%02d:%02d:%02d", h, m, sec)
 	}
 	return fmt.Sprintf("%02d:%02d", m, sec)
+}
+
+func (o *Overlay) layoutSettingsModal(gtx layout.Context, th *material.Theme, state *appstate.AppState) layout.Dimensions {
+	return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.Background{}.Layout(gtx,
+			func(gtx layout.Context) layout.Dimensions {
+				defer clip.RRect{
+					Rect: image.Rectangle{Max: gtx.Constraints.Min},
+					NE:   12, NW: 12, SE: 12, SW: 12,
+				}.Push(gtx.Ops).Pop()
+				paint.Fill(gtx.Ops, ColorSurface)
+				return layout.Dimensions{Size: gtx.Constraints.Min}
+			},
+			func(gtx layout.Context) layout.Dimensions {
+				return layout.UniformInset(unit.Dp(20)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+						// Header: Title and Close button
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle, Spacing: layout.SpaceBetween}.Layout(gtx,
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									lbl := material.H6(th, "⚙ Playback Settings")
+									lbl.Color = ColorTextPrimary
+									return lbl.Layout(gtx)
+								}),
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									return material.Clickable(gtx, &o.btnCloseSettings, func(gtx layout.Context) layout.Dimensions {
+										lbl := material.Body1(th, "✕")
+										lbl.Color = ColorTextSecondary
+										return lbl.Layout(gtx)
+									})
+								}),
+							)
+						}),
+						layout.Rigid(layout.Spacer{Height: unit.Dp(16)}.Layout),
+						// Decoder setting
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							lbl := material.Body2(th, fmt.Sprintf("Hardware Acceleration: %s Decoder", state.DecoderType))
+							lbl.Color = ColorTextSecondary
+							return lbl.Layout(gtx)
+						}),
+						layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
+						// Aspect ratio setting
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							lbl := material.Body2(th, fmt.Sprintf("Aspect Ratio: %s", state.AspectRatio))
+							lbl.Color = ColorTextSecondary
+							return lbl.Layout(gtx)
+						}),
+						layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
+						// VR Projection setting
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							lbl := material.Body2(th, fmt.Sprintf("Projection: %s | Stereo: %s", state.ViewMode, state.StereoMode))
+							lbl.Color = ColorTextSecondary
+							return lbl.Layout(gtx)
+						}),
+						layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
+						// Audio mute setting
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							muteStr := "Unmuted"
+							if state.IsMuted {
+								muteStr = "Muted"
+							}
+							lbl := material.Body2(th, fmt.Sprintf("Audio State: %s (Vol: %d%%)", muteStr, int(state.Volume*100)))
+							lbl.Color = ColorTextSecondary
+							return lbl.Layout(gtx)
+						}),
+					)
+				})
+			},
+		)
+	})
 }
