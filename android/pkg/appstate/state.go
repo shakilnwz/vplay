@@ -48,6 +48,14 @@ const (
 	Aspect100     AspectRatioMode = "100"
 )
 
+// PlayerMode represents VR panoramic mode vs Portrait flat mode.
+type PlayerMode string
+
+const (
+	PlayerModeVR       PlayerMode = "vr"
+	PlayerModePortrait PlayerMode = "portrait"
+)
+
 // AppState holds the global player state across UI, rendering, and media threads.
 type AppState struct {
 	mu sync.RWMutex
@@ -64,6 +72,7 @@ type AppState struct {
 	IsMuted        bool
 	DecoderType    string // "HW" or "SW"
 	AspectRatio    AspectRatioMode
+	PlayerMode     PlayerMode // "vr" or "portrait"
 
 	// 3D / VR state
 	ViewMode     ViewMode
@@ -75,9 +84,10 @@ type AppState struct {
 	Pitch        float32 // Vertical rotation in radians
 
 	// UI and Gesture State
-	ControlsVisible bool
-	LastUserAction  time.Time
-	IsLocked        bool // MX Player Screen Lock
+	ControlsVisible  bool
+	ControlsExpanded bool // Accordion tools strip expanded/collapsed
+	LastUserAction   time.Time
+	IsLocked         bool // Screen Lock
 	FolderDrawerOpen bool
 
 	// Gesture HUD states
@@ -93,15 +103,17 @@ func New() *AppState {
 		PlaybackSpeed:   1.0,
 		Volume:          1.0,
 		Brightness:      0.75,
-		DecoderType:     "HW",
-		AspectRatio:     AspectFit,
-		ViewMode:        ViewMode360,
-		StereoMode:      StereoHorizontal,
-		InvertStereo:    false,
-		GyroEnabled:     true,
-		CameraFOV:       75.0,
-		ControlsVisible: true,
-		LastUserAction:  time.Now(),
+		DecoderType:      "HW",
+		AspectRatio:      AspectFit,
+		PlayerMode:       PlayerModeVR,
+		ViewMode:         ViewMode360,
+		StereoMode:       StereoHorizontal,
+		InvertStereo:     false,
+		GyroEnabled:      true,
+		CameraFOV:        75.0,
+		ControlsVisible:  true,
+		ControlsExpanded: true,
+		LastUserAction:   time.Now(),
 	}
 }
 

@@ -6,6 +6,7 @@ uniform mat4 uMVPMatrix;
 out vec2 vUv;
 
 void main() {
-    vUv = aTexCoord;
+    // Invert V because Android SurfaceTexture places Y=0 at the top
+    vUv = vec2(aTexCoord.x, 1.0 - aTexCoord.y);
     gl_Position = uMVPMatrix * vec4(aPosition, 1.0);
 }

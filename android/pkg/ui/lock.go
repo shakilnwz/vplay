@@ -94,13 +94,20 @@ func (lm *LockScreenManager) LayoutLockBadge(gtx layout.Context, th *material.Th
 				},
 				func(gtx layout.Context) layout.Dimensions {
 					return layout.UniformInset(unit.Dp(10)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						text := "[LOCKED] Screen Locked"
-						if lm.showUnlockHint {
-							text = "[LOCKED] Double-tap anywhere to unlock"
-						}
-						lbl := material.Body2(th, text)
-						lbl.Color = ColorLockActive
-						return lbl.Layout(gtx)
+						return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								return AppIcons.Lock.Layout(gtx, ColorLockActive)
+							}),
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								text := " Screen Locked"
+								if lm.showUnlockHint {
+									text = " Double-tap to unlock"
+								}
+								lbl := material.Body2(th, text)
+								lbl.Color = ColorLockActive
+								return lbl.Layout(gtx)
+							}),
+						)
 					})
 				},
 			)

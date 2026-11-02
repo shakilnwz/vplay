@@ -3,7 +3,6 @@ package ui
 import (
 	"fmt"
 	"image"
-	"image/color"
 	"time"
 
 	"gioui.org/layout"
@@ -27,6 +26,7 @@ type App struct {
 	Gestures   *GestureHandler
 	Explorer   *Explorer
 
+	btnOpenMenu    widget.Clickable
 	btnOpenInitial widget.Clickable
 }
 
@@ -70,8 +70,10 @@ func (a *App) Layout(gtx layout.Context) layout.Dimensions {
 		}
 	}
 
-	// 1. Draw solid cinema dark background
-	paint.Fill(gtx.Ops, ColorBackground)
+	// 1. Draw solid cinema dark background only when no video is playing
+	if a.State.CurrentVideo == nil {
+		paint.Fill(gtx.Ops, ColorBackground)
+	}
 
 	return layout.Stack{}.Layout(gtx,
 		// Layer 0: 3D / Video viewport area (fills entire screen)
@@ -82,7 +84,7 @@ func (a *App) Layout(gtx layout.Context) layout.Dimensions {
 
 		// Layer 1: Gesture recognizer (single-finger 360 drag, brightness/volume swipes, pinch FOV)
 		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
-			if !a.State.IsLocked && !a.State.FolderDrawerOpen {
+			if !a.State.IsLocked && !a.State.FolderDrawerOpen && a.State.CurrentVideo != nil {
 				return a.Gestures.Layout(gtx, a.State)
 			}
 			return layout.Dimensions{}
@@ -92,6 +94,31 @@ func (a *App) Layout(gtx layout.Context) layout.Dimensions {
 		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
 			if a.State.ControlsVisible && !a.State.IsLocked && !a.State.FolderDrawerOpen {
 				return a.Overlay.Layout(gtx, a.Theme, a.State)
+			}
+			return layout.Dimensions{}
+		}),
+
+		// Layer 2.5: Top-Left Floating Sidebar Trigger (matching App.vue)
+		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+			if !a.State.IsLocked && !a.State.FolderDrawerOpen && (a.State.ControlsVisible || a.State.CurrentVideo == nil) {
+				if a.btnOpenMenu.Clicked(gtx) {
+					a.State.FolderDrawerOpen = true
+					a.State.ControlsVisible = true
+					gtx.Execute(op.InvalidateCmd{})
+				}
+				return layout.NW.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return layout.Inset{
+						Top:  unit.Dp(16),
+						Left: unit.Dp(16),
+					}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						ib := material.IconButton(a.Theme, &a.btnOpenMenu, AppIcons.Menu, "Open Library")
+						ib.Background = ColorPrimary
+						ib.Color = ColorTextPrimary
+						ib.Size = unit.Dp(24)
+						ib.Inset = layout.UniformInset(unit.Dp(10))
+						return ib.Layout(gtx)
+					})
+				})
 			}
 			return layout.Dimensions{}
 		}),
@@ -124,74 +151,35 @@ func (a *App) Layout(gtx layout.Context) layout.Dimensions {
 	)
 }
 
-// layoutViewportPlaceholder displays interactive VR panorama grid and horizon indicators.
+// layoutViewportPlaceholder displays welcome screen when no video is selected.
 func (a *App) layoutViewportPlaceholder(gtx layout.Context) layout.Dimensions {
-	size := gtx.Constraints.Max
-	centerY := float32(size.Y) / 2.0
-
-	// Draw interactive VR horizon line responding to pitch tilt
-	if a.State.ViewMode == appstate.ViewMode360 || a.State.ViewMode == appstate.ViewMode180 {
-		horizonY := int(centerY - a.State.Pitch*200.0)
-		if horizonY >= 0 && horizonY < size.Y {
-			defer clip.Rect{
-				Min: image.Point{X: 0, Y: horizonY},
-				Max: image.Point{X: size.X, Y: horizonY + 1},
-			}.Push(gtx.Ops).Pop()
-			paint.Fill(gtx.Ops, color.NRGBA{R: 59, G: 130, B: 246, A: 60})
-		}
+	if a.State.CurrentVideo != nil {
+		return layout.Dimensions{Size: gtx.Constraints.Max}
 	}
 
 	return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		if a.State.CurrentVideo == nil {
-			if a.btnOpenInitial.Clicked(gtx) {
-				a.State.FolderDrawerOpen = true
-				gtx.Execute(op.InvalidateCmd{})
-			}
-
-			return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle}.Layout(gtx,
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					lbl := material.H5(a.Theme, "VR Player")
-					lbl.Color = ColorPrimary
-					return lbl.Layout(gtx)
-				}),
-				layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					lbl := material.Body2(a.Theme, "Select a video from your library to begin")
-					lbl.Color = ColorTextSecondary
-					return lbl.Layout(gtx)
-				}),
-				layout.Rigid(layout.Spacer{Height: unit.Dp(16)}.Layout),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return material.Button(a.Theme, &a.btnOpenInitial, "BROWSE VIDEOS & FOLDERS").Layout(gtx)
-				}),
-			)
+		if a.btnOpenInitial.Clicked(gtx) {
+			a.State.FolderDrawerOpen = true
+			gtx.Execute(op.InvalidateCmd{})
 		}
 
-		title := a.State.CurrentVideo.Title
 		return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle}.Layout(gtx,
-			// Reticle Crosshair
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				lbl := material.H4(a.Theme, "+")
-				lbl.Color = color.NRGBA{R: 59, G: 130, B: 246, A: 120}
+				lbl := material.H5(a.Theme, "VPlay")
+				lbl.Color = ColorPrimary
 				return lbl.Layout(gtx)
 			}),
 			layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
-			// Video Title
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				lbl := material.H6(a.Theme, title)
-				lbl.Color = ColorTextPrimary
-				return lbl.Layout(gtx)
-			}),
-			layout.Rigid(layout.Spacer{Height: unit.Dp(6)}.Layout),
-			// Real-time VR Look Angle HUD
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				yawDeg := a.State.Yaw * 180.0 / 3.14159
-				pitchDeg := a.State.Pitch * 180.0 / 3.14159
-				infoStr := fmt.Sprintf("Yaw: %.0f deg | Pitch: %.0f deg | FOV: %.0f | %s",
-					yawDeg, pitchDeg, a.State.CameraFOV, a.State.ViewMode)
-				lbl := material.Caption(a.Theme, infoStr)
+				lbl := material.Body2(a.Theme, "Select a 3D SBS or 360° video to flatten and play")
 				lbl.Color = ColorTextSecondary
 				return lbl.Layout(gtx)
+			}),
+			layout.Rigid(layout.Spacer{Height: unit.Dp(16)}.Layout),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				btn := material.Button(a.Theme, &a.btnOpenInitial, "Open Library")
+				btn.Background = ColorPrimary
+				return btn.Layout(gtx)
 			}),
 		)
 	})

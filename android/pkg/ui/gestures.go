@@ -170,7 +170,7 @@ func (gh *GestureHandler) Layout(gtx layout.Context, state *appstate.AppState) l
 				// Check tap vs drag distance
 				totalDist := float32(math.Hypot(float64(pe.Position.X-gh.dragStartPos[0]), float64(pe.Position.Y-gh.dragStartPos[1])))
 				if totalDist < 15.0 {
-					gh.handleTap(pe.Position.X, width, state)
+					gh.handleTap(gtx, pe.Position.X, width, state)
 				}
 			}
 		}
@@ -192,7 +192,8 @@ func (gh *GestureHandler) computePinchDistance() float32 {
 	return float32(math.Hypot(float64(dx), float64(dy)))
 }
 
-func (gh *GestureHandler) handleTap(tapX, screenWidth float32, state *appstate.AppState) {
+func (gh *GestureHandler) handleTap(gtx layout.Context, tapX, screenWidth float32, state *appstate.AppState) {
+	state.TouchActivity()
 	now := time.Now()
 	if now.Sub(gh.lastTapTime) < 320*time.Millisecond {
 		// Double tap detected!
@@ -217,4 +218,5 @@ func (gh *GestureHandler) handleTap(tapX, screenWidth float32, state *appstate.A
 		state.ControlsVisible = !state.ControlsVisible
 	}
 	gh.lastTapTime = now
+	gtx.Execute(op.InvalidateCmd{})
 }

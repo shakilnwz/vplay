@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"image"
+	"image/color"
 	"sort"
 	"time"
 
@@ -16,23 +17,31 @@ import (
 	"github.com/shakilnwz/vplay/android/pkg/storage"
 )
 
-// Explorer manages the MX Player folder-first library and media browser.
+// Explorer manages the media browser drawer matching Sidebar.vue.
 type Explorer struct {
 	folderList widget.List
 	videoList  widget.List
 
 	// Navigation state
-	currentFolder string // empty = top-level folder view
+	currentFolder string
 	videos        []appstate.VideoItem
 	folders       map[string][]appstate.VideoItem
 
+	// Mode Toggles & Action Buttons (matching Sidebar.vue)
+	btnModeVR       widget.Clickable
+	btnModePortrait widget.Clickable
+	btnOpenFolder   widget.Clickable
+	btnPickFiles    widget.Clickable
+	btnDemoSample   widget.Clickable
+
 	// Search & Sorting
-	searchEditor widget.Editor
-	sortOrder    storage.SortOrder
-	btnSort      widget.Clickable
-	btnClose     widget.Clickable
+	searchEditor  widget.Editor
+	sortOrder     storage.SortOrder
+	btnSort       widget.Clickable
+	btnClose      widget.Clickable
+	btnBackdrop   widget.Clickable
 	btnBackFolder widget.Clickable
-	btnRescan    widget.Clickable
+	btnRescan     widget.Clickable
 
 	// Resume prompt modal
 	resumePendingVideo *appstate.VideoItem
@@ -68,48 +77,103 @@ func (ex *Explorer) SetVideos(videos []appstate.VideoItem) {
 	ex.folderClicks = make([]widget.Clickable, len(ex.folders))
 }
 
-// Layout renders the explorer drawer / modal view.
+// Layout renders the drawer matching Sidebar.vue.
 func (ex *Explorer) Layout(gtx layout.Context, th *material.Theme, state *appstate.AppState) layout.Dimensions {
-	ex.handleEvents(gtx)
+	ex.handleEvents(gtx, state)
 
-	// Background scrim
-	paint.Fill(gtx.Ops, ColorBackground)
+	// Drawer width: max 380dp or 85% of screen width
+	drawerWidth := gtx.Dp(unit.Dp(380))
+	if drawerWidth > gtx.Constraints.Max.X {
+		drawerWidth = gtx.Constraints.Max.X
+	}
 
-	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-		// Header Bar
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return ex.layoutHeader(gtx, th)
+	return layout.Stack{}.Layout(gtx,
+		// Dimmed backdrop (clicking it closes the drawer)
+		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+			return material.Clickable(gtx, &ex.btnBackdrop, func(gtx layout.Context) layout.Dimensions {
+				defer clip.Rect{Max: gtx.Constraints.Max}.Push(gtx.Ops).Pop()
+				paint.Fill(gtx.Ops, color.NRGBA{R: 0, G: 0, B: 0, A: 160})
+				return layout.Dimensions{Size: gtx.Constraints.Max}
+			})
 		}),
-		// Content Area (Folder-First View or Video List)
-		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-			if ex.currentFolder == "" {
-				return ex.layoutFolderList(gtx, th)
-			}
-			return ex.layoutVideoList(gtx, th)
-		}),
-		// Resume Dialog Overlay (if pending)
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			if ex.resumePendingVideo != nil {
-				return ex.layoutResumeDialog(gtx, th)
-			}
-			return layout.Dimensions{}
+
+		// Left Drawer Panel
+		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+			gtx.Constraints.Max.X = drawerWidth
+			gtx.Constraints.Min.X = drawerWidth
+			gtx.Constraints.Min.Y = gtx.Constraints.Max.Y
+
+			defer clip.Rect{Max: image.Point{X: drawerWidth, Y: gtx.Constraints.Max.Y}}.Push(gtx.Ops).Pop()
+			paint.Fill(gtx.Ops, ColorSurface)
+
+			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+				// Header Bar (VPlay, Mode Toggle, Close Button)
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return ex.layoutHeader(gtx, th, state)
+				}),
+
+				// Storage Actions Strip (Open Folder, Demo Sample)
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return ex.layoutStorageActions(gtx, th)
+				}),
+
+				// Content Area (Folder-First View or Video List)
+				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					if ex.currentFolder == "" {
+						return ex.layoutFolderList(gtx, th)
+					}
+					return ex.layoutVideoList(gtx, th)
+				}),
+
+				// Resume Dialog Overlay (if pending)
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					if ex.resumePendingVideo != nil {
+						return ex.layoutResumeDialog(gtx, th)
+					}
+					return layout.Dimensions{}
+				}),
+			)
 		}),
 	)
 }
 
-func (ex *Explorer) handleEvents(gtx layout.Context) {
-	if ex.btnClose.Clicked(gtx) {
+func (ex *Explorer) handleEvents(gtx layout.Context, state *appstate.AppState) {
+	if ex.btnClose.Clicked(gtx) || ex.btnBackdrop.Clicked(gtx) {
 		if ex.OnClose != nil {
 			ex.OnClose()
 		}
 	}
+
 	if ex.btnBackFolder.Clicked(gtx) {
 		ex.currentFolder = ""
 	}
-	if ex.btnRescan.Clicked(gtx) {
+
+	if ex.btnModeVR.Clicked(gtx) {
+		state.PlayerMode = appstate.PlayerModeVR
+		state.ViewMode = appstate.ViewMode360
+	}
+
+	if ex.btnModePortrait.Clicked(gtx) {
+		state.PlayerMode = appstate.PlayerModePortrait
+		state.ViewMode = appstate.ViewModeFlat
+	}
+
+	if ex.btnOpenFolder.Clicked(gtx) || ex.btnRescan.Clicked(gtx) {
 		videos := storage.ScanDefaultStorageLocations()
 		ex.SetVideos(videos)
 	}
+
+	if ex.btnDemoSample.Clicked(gtx) {
+		sample := appstate.VideoItem{
+			URI:      "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+			Title:    "Big Buck Bunny (Sample)",
+			Duration: 596 * time.Second,
+		}
+		if ex.OnSelectVideo != nil {
+			ex.OnSelectVideo(sample, 0)
+		}
+	}
+
 	if ex.btnSort.Clicked(gtx) {
 		switch ex.sortOrder {
 		case storage.SortDateNewest:
@@ -143,73 +207,106 @@ func (ex *Explorer) handleEvents(gtx layout.Context) {
 	}
 }
 
-func (ex *Explorer) layoutHeader(gtx layout.Context, th *material.Theme) layout.Dimensions {
-	return layout.Background{}.Layout(gtx,
-		func(gtx layout.Context) layout.Dimensions {
-			sz := image.Point{X: gtx.Constraints.Max.X, Y: gtx.Constraints.Min.Y}
-			defer clip.Rect{Max: sz}.Push(gtx.Ops).Pop()
-			paint.Fill(gtx.Ops, ColorSurface)
-			return layout.Dimensions{Size: sz}
-		},
-		func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{
-				Top:    unit.Dp(12),
-				Bottom: unit.Dp(12),
-				Left:   unit.Dp(16),
-				Right:  unit.Dp(16),
-			}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+func (ex *Explorer) layoutHeader(gtx layout.Context, th *material.Theme, state *appstate.AppState) layout.Dimensions {
+	return layout.Inset{
+		Top:    unit.Dp(16),
+		Bottom: unit.Dp(12),
+		Left:   unit.Dp(16),
+		Right:  unit.Dp(16),
+	}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+			// Title Row + Close
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle, Spacing: layout.SpaceBetween}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						if ex.currentFolder != "" {
 							return material.Clickable(gtx, &ex.btnBackFolder, func(gtx layout.Context) layout.Dimensions {
-								lbl := material.Body1(th, "< Back")
-								lbl.Color = ColorPrimary
-								return lbl.Layout(gtx)
+								return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+										lbl := material.Body1(th, "< Back")
+										lbl.Color = ColorPrimary
+										return lbl.Layout(gtx)
+									}),
+									layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
+									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+										lbl := material.Body1(th, ex.currentFolder)
+										lbl.Color = ColorTextPrimary
+										return lbl.Layout(gtx)
+									}),
+								)
 							})
 						}
-						lbl := material.H6(th, "Media Library")
+						lbl := material.H6(th, "VPlay")
 						lbl.Color = ColorTextPrimary
 						return lbl.Layout(gtx)
 					}),
-					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-						if ex.currentFolder != "" {
-							return layout.Inset{Left: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-								lbl := material.Body1(th, ex.currentFolder)
-								lbl.Color = ColorTextPrimary
-								return lbl.Layout(gtx)
-							})
-						}
-						return layout.Dimensions{}
-					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return layout.Inset{Right: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							return material.Clickable(gtx, &ex.btnRescan, func(gtx layout.Context) layout.Dimensions {
-								lbl := material.Caption(th, "Rescan")
-								lbl.Color = ColorPrimary
-								return lbl.Layout(gtx)
-							})
-						})
-					}),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return material.Clickable(gtx, &ex.btnSort, func(gtx layout.Context) layout.Dimensions {
-							lbl := material.Caption(th, fmt.Sprintf("Sort: %s", ex.sortOrder))
-							lbl.Color = ColorPrimary
-							return lbl.Layout(gtx)
-						})
-					}),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return layout.Inset{Left: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							return material.Clickable(gtx, &ex.btnClose, func(gtx layout.Context) layout.Dimensions {
-								lbl := material.Body1(th, "X")
-								lbl.Color = ColorTextSecondary
-								return lbl.Layout(gtx)
-							})
-						})
+						ib := material.IconButton(th, &ex.btnClose, AppIcons.Close, "Close Drawer")
+						ib.Background = color.NRGBA{R: 255, G: 255, B: 255, A: 20}
+						ib.Color = ColorTextSecondary
+						ib.Size = unit.Dp(18)
+						ib.Inset = layout.UniformInset(unit.Dp(6))
+						return ib.Layout(gtx)
 					}),
 				)
-			})
-		},
-	)
+			}),
+
+			// Mode Toggle Row (VR Mode vs Portrait)
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Top: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+							isVR := state.PlayerMode == appstate.PlayerModeVR
+							bg := color.NRGBA{R: 255, G: 255, B: 255, A: 20}
+							if isVR {
+								bg = ColorPrimary
+							}
+							btn := material.Button(th, &ex.btnModeVR, "VR Mode")
+							btn.Background = bg
+							btn.Inset = layout.UniformInset(unit.Dp(8))
+							return btn.Layout(gtx)
+						}),
+						layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
+						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+							isPortrait := state.PlayerMode == appstate.PlayerModePortrait
+							bg := color.NRGBA{R: 255, G: 255, B: 255, A: 20}
+							if isPortrait {
+								bg = ColorPrimary
+							}
+							btn := material.Button(th, &ex.btnModePortrait, "Portrait")
+							btn.Background = bg
+							btn.Inset = layout.UniformInset(unit.Dp(8))
+							return btn.Layout(gtx)
+						}),
+					)
+				})
+			}),
+		)
+	})
+}
+
+func (ex *Explorer) layoutStorageActions(gtx layout.Context, th *material.Theme) layout.Dimensions {
+	return layout.Inset{
+		Bottom: unit.Dp(10),
+		Left:   unit.Dp(16),
+		Right:  unit.Dp(16),
+	}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+				btn := material.Button(th, &ex.btnOpenFolder, "Open Folder")
+				btn.Background = ColorPrimary
+				btn.Inset = layout.UniformInset(unit.Dp(8))
+				return btn.Layout(gtx)
+			}),
+			layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
+			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+				btn := material.Button(th, &ex.btnDemoSample, "Demo Sample")
+				btn.Background = ColorSurfaceLight
+				btn.Inset = layout.UniformInset(unit.Dp(8))
+				return btn.Layout(gtx)
+			}),
+		)
+	})
 }
 
 func (ex *Explorer) layoutFolderList(gtx layout.Context, th *material.Theme) layout.Dimensions {
@@ -232,26 +329,27 @@ func (ex *Explorer) layoutFolderList(gtx layout.Context, th *material.Theme) lay
 		}
 
 		return material.Clickable(gtx, &ex.folderClicks[index], func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(16), Right: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Top: unit.Dp(4), Bottom: unit.Dp(4), Left: unit.Dp(16), Right: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Background{}.Layout(gtx,
 					func(gtx layout.Context) layout.Dimensions {
+						sz := gtx.Constraints.Min
 						defer clip.RRect{
-							Rect: image.Rectangle{Max: gtx.Constraints.Min},
+							Rect: image.Rectangle{Max: sz},
 							NE:   8, NW: 8, SE: 8, SW: 8,
 						}.Push(gtx.Ops).Pop()
 						paint.Fill(gtx.Ops, ColorSurfaceLight)
-						return layout.Dimensions{Size: gtx.Constraints.Min}
+						return layout.Dimensions{Size: sz}
 					},
 					func(gtx layout.Context) layout.Dimensions {
-						return layout.UniformInset(unit.Dp(16)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						return layout.UniformInset(unit.Dp(12)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 							return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+								// Folder Icon
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-									lbl := material.Body1(th, "[DIR]")
-									lbl.Color = ColorPrimary
-									return lbl.Layout(gtx)
+									return AppIcons.Folder.Layout(gtx, ColorPrimary)
 								}),
+								// Folder Name & Count
 								layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-									return layout.Inset{Left: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+									return layout.Inset{Left: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 										return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 											layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 												lbl := material.Body1(th, name)
@@ -266,10 +364,9 @@ func (ex *Explorer) layoutFolderList(gtx layout.Context, th *material.Theme) lay
 										)
 									})
 								}),
+								// Chevron Right
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-									lbl := material.Body1(th, ">")
-									lbl.Color = ColorPrimary
-									return lbl.Layout(gtx)
+									return AppIcons.Forward10.Layout(gtx, ColorTextSecondary)
 								}),
 							)
 						})
@@ -293,7 +390,6 @@ func (ex *Explorer) layoutVideoList(gtx layout.Context, th *material.Theme) layo
 
 		if ex.videoClicks[index].Clicked(gtx) {
 			if v.LastPosition > 10*time.Second {
-				// Show resume dialog
 				ex.resumePendingVideo = &v
 			} else {
 				if ex.OnSelectVideo != nil {
@@ -303,25 +399,31 @@ func (ex *Explorer) layoutVideoList(gtx layout.Context, th *material.Theme) layo
 		}
 
 		return material.Clickable(gtx, &ex.videoClicks[index], func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Top: unit.Dp(6), Bottom: unit.Dp(6), Left: unit.Dp(16), Right: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Top: unit.Dp(4), Bottom: unit.Dp(4), Left: unit.Dp(16), Right: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Background{}.Layout(gtx,
 					func(gtx layout.Context) layout.Dimensions {
+						sz := gtx.Constraints.Min
 						defer clip.RRect{
-							Rect: image.Rectangle{Max: gtx.Constraints.Min},
+							Rect: image.Rectangle{Max: sz},
 							NE:   8, NW: 8, SE: 8, SW: 8,
 						}.Push(gtx.Ops).Pop()
 						paint.Fill(gtx.Ops, ColorSurfaceLight)
-						return layout.Dimensions{Size: gtx.Constraints.Min}
+						return layout.Dimensions{Size: sz}
 					},
 					func(gtx layout.Context) layout.Dimensions {
 						return layout.UniformInset(unit.Dp(12)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 							return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 									return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+										layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+											return AppIcons.Play.Layout(gtx, ColorPrimary)
+										}),
 										layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-											lbl := material.Body1(th, v.Title)
-											lbl.Color = ColorTextPrimary
-											return lbl.Layout(gtx)
+											return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+												lbl := material.Body1(th, v.Title)
+												lbl.Color = ColorTextPrimary
+												return lbl.Layout(gtx)
+											})
 										}),
 										layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 											durStr := formatDuration(v.Duration)
