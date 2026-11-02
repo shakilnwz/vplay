@@ -20,28 +20,34 @@ typedef struct {
 } SensorContext;
 
 static SensorContext* initSensor() {
+    ALooper* looper = ALooper_prepare(ALOOPER_PREPARE_ALLOW_NON_CALLBACKS);
+    if (!looper) {
+        return NULL;
+    }
+
+    ASensorManager* sm = ASensorManager_getInstance();
+    if (!sm) {
+        return NULL;
+    }
+
+    const ASensor* sensor = ASensorManager_getDefaultSensor(sm, ASENSOR_TYPE_ROTATION_VECTOR);
+    if (!sensor) {
+        return NULL;
+    }
+
+    ASensorEventQueue* queue = ASensorManager_createEventQueue(sm, looper, 1, NULL, NULL);
+    if (!queue) {
+        return NULL;
+    }
+
+    ASensorEventQueue_enableSensor(queue, sensor);
+    ASensorEventQueue_setEventRate(queue, sensor, 10000); // 10000 microseconds = 100 Hz
+
     SensorContext* ctx = (SensorContext*)malloc(sizeof(SensorContext));
-    ctx->sm = ASensorManager_getInstance();
-    if (!ctx->sm) {
-        free(ctx);
-        return NULL;
-    }
-
-    ctx->sensor = ASensorManager_getDefaultSensor(ctx->sm, ASENSOR_TYPE_ROTATION_VECTOR);
-    if (!ctx->sensor) {
-        free(ctx);
-        return NULL;
-    }
-
-    ctx->looper = ALooper_prepare(ALOOPER_PREPARE_ALLOW_NON_CALLBACKS);
-    ctx->queue = ASensorManager_createEventQueue(ctx->sm, ctx->looper, 1, NULL, NULL);
-    if (!ctx->queue) {
-        free(ctx);
-        return NULL;
-    }
-
-    ASensorEventQueue_enableSensor(ctx->queue, ctx->sensor);
-    ASensorEventQueue_setEventRate(ctx->queue, ctx->sensor, 10000); // 10000 microseconds = 100 Hz
+    ctx->sm = sm;
+    ctx->sensor = sensor;
+    ctx->queue = queue;
+    ctx->looper = looper;
     ctx->running = true;
     return ctx;
 }
@@ -85,7 +91,7 @@ static void stopSensor(SensorContext* ctx) {
 import "C"
 
 import (
-	"errors"
+	"runtime"
 	"sync"
 	"time"
 )
@@ -93,7 +99,6 @@ import (
 // SensorListener polls the hardware rotation vector sensor on Android via NDK.
 type SensorListener struct {
 	mu      sync.Mutex
-	ctx     *C.SensorContext
 	tracker *Tracker
 	stopCh  chan struct{}
 }
@@ -110,14 +115,19 @@ func (s *SensorListener) Start() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	ctx := C.initSensor()
-	if ctx == nil {
-		return errors.New("rotation vector sensor not available on this device")
-	}
-	s.ctx = ctx
 	s.stopCh = make(chan struct{})
 
 	go func() {
+		// Android ALooper requires thread-affinity for polling
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+
+		ctx := C.initSensor()
+		if ctx == nil {
+			return
+		}
+		defer C.stopSensor(ctx)
+
 		ticker := time.NewTicker(10 * time.Millisecond) // 100 Hz
 		defer ticker.Stop()
 
@@ -128,7 +138,7 @@ func (s *SensorListener) Start() error {
 			case <-s.stopCh:
 				return
 			case <-ticker.C:
-				if bool(C.pollSensorEvent(s.ctx, &quat[0])) {
+				if bool(C.pollSensorEvent(ctx, &quat[0])) {
 					s.tracker.UpdateRawSensor(float32(quat[0]), float32(quat[1]), float32(quat[2]), float32(quat[3]))
 				}
 			}
@@ -143,9 +153,8 @@ func (s *SensorListener) Stop() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.ctx != nil {
+	if s.stopCh != nil {
 		close(s.stopCh)
-		C.stopSensor(s.ctx)
-		s.ctx = nil
+		s.stopCh = nil
 	}
 }
