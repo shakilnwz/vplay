@@ -98,13 +98,20 @@ const handleVideoRef = (node: HTMLVideoElement | null) => {
     videoPlayer.videoElement.value = node;
 };
 
-// Watch current video to create blob URL
+// Watch current video to create blob URL or use direct stream URL
+const activeBlobUrl = ref<string | null>(null);
 watch(currentVideo, (newVideo) => {
-    if (videoSrc.value) {
-        URL.revokeObjectURL(videoSrc.value);
+    if (activeBlobUrl.value) {
+        URL.revokeObjectURL(activeBlobUrl.value);
+        activeBlobUrl.value = null;
     }
     if (newVideo) {
-        videoSrc.value = URL.createObjectURL(newVideo);
+        if ((newVideo as any).streamUrl) {
+            videoSrc.value = (newVideo as any).streamUrl;
+        } else {
+            activeBlobUrl.value = URL.createObjectURL(newVideo);
+            videoSrc.value = activeBlobUrl.value;
+        }
     } else {
         videoSrc.value = null;
     }

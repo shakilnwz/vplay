@@ -30,10 +30,18 @@ echo "Using JAVA_HOME: $JAVA_HOME ($( "$JAVA_HOME/bin/java" -version 2>&1 | head
 echo "Using ANDROID_HOME: $ANDROID_HOME"
 
 OUT="${1:-vrplayer.apk}"
+ARCH="${ARCH:-arm64}"
+
+ARCH_ARG=()
+if [ "$ARCH" != "all" ]; then
+    ARCH_ARG=(-arch "$ARCH")
+fi
+
+echo "Target architecture: $ARCH"
 
 "$GOGIO_BIN" -target android \
     -appid com.lerd.vrplayer \
-    -arch arm64 \
+    "${ARCH_ARG[@]}" \
     -minsdk 24 \
     -targetsdk 34 \
     -o "$OUT" \

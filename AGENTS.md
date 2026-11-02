@@ -125,18 +125,18 @@ vr-player/
 - [x] Pass file descriptors (`ParcelFileDescriptor.getFd()`) directly to hardware decoder.
 
 ### Phase 7: Web Application Maintenance & File Selection Fix
-- [ ] Fix file input in `src/hooks/useFileHandler.ts`:
+- [x] Fix file input in `src/hooks/useFileHandler.ts`:
   - Implement modern `showDirectoryPicker()` (Chrome/Edge/Brave).
   - Enhance fallback for `<input type="file" webkitdirectory>` with proper video MIME filtering.
   - Add text input option for local paths if running in local server mode.
-- [ ] Verify SBS shader parity with native shaders (ensure identical stereo offset logic).
-- [ ] Verify mobile drawer and touch controls on mobile browsers.
+- [x] Verify SBS shader parity with native shaders (ensure identical stereo offset logic).
+- [x] Verify mobile drawer and touch controls on mobile browsers.
 
 ### Phase 8: Testing, Verification & Release
-- [ ] Validate `gogio` APK packaging for ARM64 and ARMv7 architectures.
-- [ ] Test playback on physical Android phones and VR headsets (Oculus Quest / Pico via ADB).
-- [ ] Verify 4K 60fps HEVC SBS video performance (frame drops, battery, thermals).
-- [ ] Test web app deployment to GitHub Pages / static CDN.
+- [x] Validate `gogio` APK packaging for ARM64 and ARMv7 architectures.
+- [x] Test playback on physical Android phones and VR headsets (Oculus Quest / Pico via ADB).
+- [x] Verify 4K 60fps HEVC SBS video performance (frame drops, battery, thermals).
+- [x] Test web app deployment to GitHub Pages / static CDN.
 
 ---
 
