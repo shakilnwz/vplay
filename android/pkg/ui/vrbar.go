@@ -77,11 +77,11 @@ func (vb *VRBar) Layout(gtx layout.Context, th *material.Theme, state *appstate.
 		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 			// Mode 360
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return vb.layoutChip(gtx, th, &vb.btn360, "360° Sphere", state.ViewMode == appstate.ViewMode360)
+				return vb.layoutChip(gtx, th, &vb.btn360, "360 Sphere", state.ViewMode == appstate.ViewMode360)
 			}),
 			// Mode 180
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return vb.layoutChip(gtx, th, &vb.btn180, "180° Dome", state.ViewMode == appstate.ViewMode180)
+				return vb.layoutChip(gtx, th, &vb.btn180, "180 Dome", state.ViewMode == appstate.ViewMode180)
 			}),
 			// Mode Flat
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -99,7 +99,7 @@ func (vb *VRBar) Layout(gtx layout.Context, th *material.Theme, state *appstate.
 			}),
 			// Recenter Button
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return vb.layoutChip(gtx, th, &vb.btnRecenter, "Recenter 🎯", false)
+				return vb.layoutChip(gtx, th, &vb.btnRecenter, "Recenter", false)
 			}),
 		)
 	})

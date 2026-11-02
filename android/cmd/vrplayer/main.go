@@ -2,10 +2,13 @@ package main
 
 import (
 	"log"
+	_ "net"
 	"os"
 	"time"
 
 	"gioui.org/app"
+	_ "gioui.org/app/permission/storage"
+	_ "gioui.org/app/permission/wakelock"
 	"gioui.org/op"
 	"gioui.org/unit"
 	"github.com/shakilnwz/vplay/android/pkg/appstate"
@@ -60,8 +63,11 @@ func main() {
 		}
 	}
 
-	// Populate initial library videos with samples and scanned media
-	videos := []appstate.VideoItem{
+	// Populate initial library videos by scanning device storage (Movies, Downloads, DCIM)
+	videos := storage.ScanDefaultStorageLocations()
+
+	// Append sample VR videos
+	samples := []appstate.VideoItem{
 		{
 			URI:          "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
 			Title:        "Big Buck Bunny (Sample)",
@@ -71,23 +77,24 @@ func main() {
 		},
 		{
 			URI:          "sample_vr_360.mp4",
-			Title:        "Rollercoaster 360° VR",
+			Title:        "Rollercoaster 360 VR",
 			Path:         "VR 360/rollercoaster_360.mp4",
 			Duration:     180 * time.Second,
 			LastPosition: 0,
 		},
 		{
 			URI:          "sample_sbs_180.mp4",
-			Title:        "Space Station SBS 3D 180°",
+			Title:        "Space Station SBS 3D 180",
 			Path:         "VR 180 SBS/spacestation_sbs.mp4",
 			Duration:     320 * time.Second,
 			LastPosition: 120 * time.Second,
 		},
 	}
-	if local, err := storage.ScanDirectory("."); err == nil && len(local) > 0 {
-		videos = append(videos, local...)
-	}
+	videos = append(videos, samples...)
 	playerUI.Explorer.SetVideos(videos)
+
+	// Open the Media Explorer by default so the user can immediately select a video
+	state.FolderDrawerOpen = true
 
 	// Sync playback state periodically
 	go func() {

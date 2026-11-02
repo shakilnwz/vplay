@@ -59,10 +59,16 @@ func ScanDefaultStorageLocations() []appstate.VideoItem {
 	locations := []string{
 		"/sdcard/Movies",
 		"/sdcard/Download",
+		"/sdcard/DCIM/Camera",
 		"/sdcard/DCIM",
+		"/sdcard/Videos",
 		"/sdcard/VR",
 		"/storage/emulated/0/Movies",
 		"/storage/emulated/0/Download",
+		"/storage/emulated/0/DCIM/Camera",
+		"/storage/emulated/0/DCIM",
+		"/storage/emulated/0/Videos",
+		"/storage/emulated/0/VR",
 	}
 
 	var allVideos []appstate.VideoItem

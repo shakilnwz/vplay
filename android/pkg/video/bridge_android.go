@@ -106,22 +106,51 @@ static jobject createMediaPlayer(JavaVM* vm, jobject surface) {
     return globalMP;
 }
 
+// mpReset resets MediaPlayer to Idle state
+static void mpReset(JavaVM* vm, jobject mp) {
+    JNIEnv* env = getJNIEnv(vm);
+    if (!env || !mp) return;
+    jclass mpClass = (*env)->GetObjectClass(env, mp);
+    jmethodID reset = (*env)->GetMethodID(env, mpClass, "reset", "()V");
+    if (reset) (*env)->CallVoidMethod(env, mp, reset);
+    if ((*env)->ExceptionCheck(env)) {
+        (*env)->ExceptionClear(env);
+    }
+}
+
 // mpSetDataSourceURI sets media URI
-static bool mpSetDataSourceURI(JavaVM* vm, jobject mp, const char* uriStr) {
+static bool mpSetDataSourceURI(JavaVM* vm, jobject mp, jobject surface, const char* uriStr) {
     JNIEnv* env = getJNIEnv(vm);
     if (!env || !mp || !uriStr) return false;
 
+    mpReset(vm, mp);
+
     jclass mpClass = (*env)->GetObjectClass(env, mp);
+    if (surface) {
+        jmethodID setSurface = (*env)->GetMethodID(env, mpClass, "setSurface", "(Landroid/view/Surface;)V");
+        if (setSurface) (*env)->CallVoidMethod(env, mp, setSurface, surface);
+    }
+
     jmethodID setDS = (*env)->GetMethodID(env, mpClass, "setDataSource", "(Ljava/lang/String;)V");
     if (!setDS) return false;
 
     jstring jUri = (*env)->NewStringUTF(env, uriStr);
     (*env)->CallVoidMethod(env, mp, setDS, jUri);
     (*env)->DeleteLocalRef(env, jUri);
+    if ((*env)->ExceptionCheck(env)) {
+        (*env)->ExceptionDescribe(env);
+        (*env)->ExceptionClear(env);
+        return false;
+    }
 
     jmethodID prepare = (*env)->GetMethodID(env, mpClass, "prepare", "()V");
     if (prepare) {
         (*env)->CallVoidMethod(env, mp, prepare);
+        if ((*env)->ExceptionCheck(env)) {
+            (*env)->ExceptionDescribe(env);
+            (*env)->ExceptionClear(env);
+            return false;
+        }
     }
     return true;
 }
@@ -226,6 +255,7 @@ import "C"
 
 import (
 	"errors"
+	"strings"
 	"sync"
 	"time"
 	"unsafe"
@@ -300,10 +330,15 @@ func (p *AndroidPlayer) OpenURI(uri string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	cURI := C.CString(uri)
+	rawPath := uri
+	if strings.HasPrefix(rawPath, "file://") {
+		rawPath = strings.TrimPrefix(rawPath, "file://")
+	}
+
+	cURI := C.CString(rawPath)
 	defer C.free(unsafe.Pointer(cURI))
 
-	if !bool(C.mpSetDataSourceURI(p.vm, p.mediaPlayer, cURI)) {
+	if !bool(C.mpSetDataSourceURI(p.vm, p.mediaPlayer, p.surface, cURI)) {
 		p.state = StateError
 		return errors.New("failed to set data source for URI")
 	}

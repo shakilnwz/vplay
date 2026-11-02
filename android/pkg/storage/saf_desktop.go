@@ -34,3 +34,28 @@ func ScanDirectory(dirPath string) ([]appstate.VideoItem, error) {
 
 	return videos, err
 }
+
+// ScanDefaultStorageLocations returns local videos on desktop.
+func ScanDefaultStorageLocations() []appstate.VideoItem {
+	home, _ := os.UserHomeDir()
+	locations := []string{
+		filepath.Join(home, "Videos"),
+		filepath.Join(home, "Downloads"),
+		".",
+	}
+
+	var allVideos []appstate.VideoItem
+	seen := make(map[string]bool)
+
+	for _, loc := range locations {
+		if items, err := ScanDirectory(loc); err == nil {
+			for _, item := range items {
+				if !seen[item.Path] {
+					seen[item.Path] = true
+					allVideos = append(allVideos, item)
+				}
+			}
+		}
+	}
+	return allVideos
+}

@@ -11,6 +11,7 @@ import (
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
 	"gioui.org/unit"
+	"gioui.org/widget"
 	"gioui.org/widget/material"
 	"github.com/shakilnwz/vplay/android/pkg/appstate"
 )
@@ -25,6 +26,8 @@ type App struct {
 	LockMgr    *LockScreenManager
 	Gestures   *GestureHandler
 	Explorer   *Explorer
+
+	btnOpenInitial widget.Clickable
 }
 
 // NewApp creates a new UI coordinator instance.
@@ -71,8 +74,9 @@ func (a *App) Layout(gtx layout.Context) layout.Dimensions {
 	paint.Fill(gtx.Ops, ColorBackground)
 
 	return layout.Stack{}.Layout(gtx,
-		// Layer 0: 3D / Video viewport area
-		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+		// Layer 0: 3D / Video viewport area (fills entire screen)
+		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+			gtx.Constraints.Min = gtx.Constraints.Max
 			return a.layoutViewportPlaceholder(gtx)
 		}),
 
@@ -138,15 +142,36 @@ func (a *App) layoutViewportPlaceholder(gtx layout.Context) layout.Dimensions {
 	}
 
 	return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		title := "VR Player"
-		if a.State.CurrentVideo != nil && a.State.CurrentVideo.Title != "" {
-			title = a.State.CurrentVideo.Title
+		if a.State.CurrentVideo == nil {
+			if a.btnOpenInitial.Clicked(gtx) {
+				a.State.FolderDrawerOpen = true
+				gtx.Execute(op.InvalidateCmd{})
+			}
+
+			return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle}.Layout(gtx,
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					lbl := material.H5(a.Theme, "VR Player")
+					lbl.Color = ColorPrimary
+					return lbl.Layout(gtx)
+				}),
+				layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					lbl := material.Body2(a.Theme, "Select a video from your library to begin")
+					lbl.Color = ColorTextSecondary
+					return lbl.Layout(gtx)
+				}),
+				layout.Rigid(layout.Spacer{Height: unit.Dp(16)}.Layout),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return material.Button(a.Theme, &a.btnOpenInitial, "BROWSE VIDEOS & FOLDERS").Layout(gtx)
+				}),
+			)
 		}
 
+		title := a.State.CurrentVideo.Title
 		return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle}.Layout(gtx,
 			// Reticle Crosshair
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				lbl := material.H4(a.Theme, "┼")
+				lbl := material.H4(a.Theme, "+")
 				lbl.Color = color.NRGBA{R: 59, G: 130, B: 246, A: 120}
 				return lbl.Layout(gtx)
 			}),
@@ -162,7 +187,7 @@ func (a *App) layoutViewportPlaceholder(gtx layout.Context) layout.Dimensions {
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				yawDeg := a.State.Yaw * 180.0 / 3.14159
 				pitchDeg := a.State.Pitch * 180.0 / 3.14159
-				infoStr := fmt.Sprintf("Yaw: %.0f° | Pitch: %.0f° | FOV: %.0f° | %s",
+				infoStr := fmt.Sprintf("Yaw: %.0f deg | Pitch: %.0f deg | FOV: %.0f | %s",
 					yawDeg, pitchDeg, a.State.CameraFOV, a.State.ViewMode)
 				lbl := material.Caption(a.Theme, infoStr)
 				lbl.Color = ColorTextSecondary
@@ -214,7 +239,7 @@ func (a *App) layoutBrightnessHUD(gtx layout.Context) layout.Dimensions {
 				func(gtx layout.Context) layout.Dimensions {
 					return layout.UniformInset(unit.Dp(16)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						pct := int(a.State.Brightness * 100)
-						lbl := material.Body1(a.Theme, fmt.Sprintf("☀ Brightness: %d%%", pct))
+						lbl := material.Body1(a.Theme, fmt.Sprintf("Brightness: %d%%", pct))
 						lbl.Color = ColorTextPrimary
 						return lbl.Layout(gtx)
 					})
@@ -240,10 +265,10 @@ func (a *App) layoutVolumeHUD(gtx layout.Context) layout.Dimensions {
 					return layout.UniformInset(unit.Dp(16)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						pct := int(a.State.Volume * 100)
 						txtColor := ColorTextPrimary
-						prefix := "🔊 Volume: "
+						prefix := "Volume: "
 						if a.State.Volume > 1.0 {
 							txtColor = ColorAccentOrange
-							prefix = "🔥 Boost: "
+							prefix = "Boost: "
 						}
 						lbl := material.Body1(a.Theme, fmt.Sprintf("%s%d%%", prefix, pct))
 						lbl.Color = txtColor

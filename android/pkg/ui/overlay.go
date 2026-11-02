@@ -214,9 +214,10 @@ func (o *Overlay) handleEvents(gtx layout.Context, state *appstate.AppState) {
 func (o *Overlay) layoutTopBar(gtx layout.Context, th *material.Theme, state *appstate.AppState) layout.Dimensions {
 	return layout.Background{}.Layout(gtx,
 		func(gtx layout.Context) layout.Dimensions {
-			defer clip.Rect{Max: gtx.Constraints.Max}.Push(gtx.Ops).Pop()
+			sz := image.Point{X: gtx.Constraints.Max.X, Y: gtx.Constraints.Min.Y}
+			defer clip.Rect{Max: sz}.Push(gtx.Ops).Pop()
 			paint.Fill(gtx.Ops, ColorSurface)
-			return layout.Dimensions{Size: gtx.Constraints.Max}
+			return layout.Dimensions{Size: sz}
 		},
 		func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{
@@ -229,7 +230,7 @@ func (o *Overlay) layoutTopBar(gtx layout.Context, th *material.Theme, state *ap
 					// Back Button
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return material.Clickable(gtx, &o.btnBack, func(gtx layout.Context) layout.Dimensions {
-							lbl := material.Body1(th, "◀ Back")
+							lbl := material.Body1(th, "< Back")
 							lbl.Color = ColorPrimary
 							return lbl.Layout(gtx)
 						})
@@ -244,6 +245,16 @@ func (o *Overlay) layoutTopBar(gtx layout.Context, th *material.Theme, state *ap
 							lbl := material.Body1(th, title)
 							lbl.Color = ColorTextPrimary
 							return lbl.Layout(gtx)
+						})
+					}),
+					// Open File / Library button on top bar
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return layout.Inset{Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							return material.Clickable(gtx, &o.btnFolders, func(gtx layout.Context) layout.Dimensions {
+								lbl := material.Body2(th, "[OPEN FILE]")
+								lbl.Color = ColorPrimary
+								return lbl.Layout(gtx)
+							})
 						})
 					}),
 					// HW Decoder Pill
@@ -272,9 +283,9 @@ func (o *Overlay) layoutTopBar(gtx layout.Context, th *material.Theme, state *ap
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 							return material.Clickable(gtx, &o.btnAudio, func(gtx layout.Context) layout.Dimensions {
-								text := "Audio"
+								text := "[Audio]"
 								if state.IsMuted {
-									text = "Muted"
+									text = "[Muted]"
 								}
 								lbl := material.Caption(th, text)
 								lbl.Color = ColorTextSecondary
@@ -286,7 +297,7 @@ func (o *Overlay) layoutTopBar(gtx layout.Context, th *material.Theme, state *ap
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 							return material.Clickable(gtx, &o.btnSub, func(gtx layout.Context) layout.Dimensions {
-								lbl := material.Caption(th, "Sub")
+								lbl := material.Caption(th, "[Sub]")
 								lbl.Color = ColorTextSecondary
 								return lbl.Layout(gtx)
 							})
@@ -296,7 +307,8 @@ func (o *Overlay) layoutTopBar(gtx layout.Context, th *material.Theme, state *ap
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Left: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 							return material.Clickable(gtx, &o.btnLock, func(gtx layout.Context) layout.Dimensions {
-								lbl := material.Body1(th, "🔒")
+								lbl := material.Caption(th, "[Lock]")
+								lbl.Color = ColorTextSecondary
 								return lbl.Layout(gtx)
 							})
 						})
@@ -305,7 +317,7 @@ func (o *Overlay) layoutTopBar(gtx layout.Context, th *material.Theme, state *ap
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Left: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 							return material.Clickable(gtx, &o.btnSettings, func(gtx layout.Context) layout.Dimensions {
-								lbl := material.Body1(th, "⚙")
+								lbl := material.Caption(th, "[Settings]")
 								lbl.Color = ColorTextSecondary
 								return lbl.Layout(gtx)
 							})
@@ -320,9 +332,10 @@ func (o *Overlay) layoutTopBar(gtx layout.Context, th *material.Theme, state *ap
 func (o *Overlay) layoutBottomContainer(gtx layout.Context, th *material.Theme, state *appstate.AppState) layout.Dimensions {
 	return layout.Background{}.Layout(gtx,
 		func(gtx layout.Context) layout.Dimensions {
-			defer clip.Rect{Max: gtx.Constraints.Max}.Push(gtx.Ops).Pop()
+			sz := image.Point{X: gtx.Constraints.Max.X, Y: gtx.Constraints.Min.Y}
+			defer clip.Rect{Max: sz}.Push(gtx.Ops).Pop()
 			paint.Fill(gtx.Ops, ColorSurface)
-			return layout.Dimensions{Size: gtx.Constraints.Max}
+			return layout.Dimensions{Size: sz}
 		},
 		func(gtx layout.Context) layout.Dimensions {
 			return layout.UniformInset(unit.Dp(16)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -376,23 +389,23 @@ func (o *Overlay) layoutScrubber(gtx layout.Context, th *material.Theme, state *
 }
 
 func (o *Overlay) layoutTransport(gtx layout.Context, th *material.Theme, state *appstate.AppState) layout.Dimensions {
-	playIcon := "▶ PLAY"
+	playIcon := "> PLAY"
 	if state.IsPlaying {
-		playIcon = "⏸ PAUSE"
+		playIcon = "|| PAUSE"
 	}
 
 	return layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle, Spacing: layout.SpaceEvenly}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return material.Clickable(gtx, &o.btnPrev, func(gtx layout.Context) layout.Dimensions {
-					lbl := material.Body1(th, "⏮")
+					lbl := material.Body1(th, "|<<")
 					lbl.Color = ColorTextPrimary
 					return lbl.Layout(gtx)
 				})
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return material.Clickable(gtx, &o.btnRewind10, func(gtx layout.Context) layout.Dimensions {
-					lbl := material.Body1(th, "⏪ -10s")
+					lbl := material.Body1(th, "<< 10s")
 					lbl.Color = ColorTextPrimary
 					return lbl.Layout(gtx)
 				})
@@ -406,14 +419,14 @@ func (o *Overlay) layoutTransport(gtx layout.Context, th *material.Theme, state 
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return material.Clickable(gtx, &o.btnForward10, func(gtx layout.Context) layout.Dimensions {
-					lbl := material.Body1(th, "⏩ +10s")
+					lbl := material.Body1(th, "10s >>")
 					lbl.Color = ColorTextPrimary
 					return lbl.Layout(gtx)
 				})
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return material.Clickable(gtx, &o.btnNext, func(gtx layout.Context) layout.Dimensions {
-					lbl := material.Body1(th, "⏭")
+					lbl := material.Body1(th, ">>|")
 					lbl.Color = ColorTextPrimary
 					return lbl.Layout(gtx)
 				})
@@ -426,8 +439,8 @@ func (o *Overlay) layoutUtilityBar(gtx layout.Context, th *material.Theme, state
 	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle, Spacing: layout.SpaceBetween}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return material.Clickable(gtx, &o.btnFolders, func(gtx layout.Context) layout.Dimensions {
-				lbl := material.Caption(th, "📁 Folders")
-				lbl.Color = ColorTextPrimary
+				lbl := material.Caption(th, "[ FOLDERS / OPEN FILE ]")
+				lbl.Color = ColorPrimary
 				return lbl.Layout(gtx)
 			})
 		}),
@@ -480,13 +493,13 @@ func (o *Overlay) layoutSettingsModal(gtx layout.Context, th *material.Theme, st
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle, Spacing: layout.SpaceBetween}.Layout(gtx,
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-									lbl := material.H6(th, "⚙ Playback Settings")
+									lbl := material.H6(th, "Playback Settings")
 									lbl.Color = ColorTextPrimary
 									return lbl.Layout(gtx)
 								}),
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 									return material.Clickable(gtx, &o.btnCloseSettings, func(gtx layout.Context) layout.Dimensions {
-										lbl := material.Body1(th, "✕")
+										lbl := material.Body1(th, "X")
 										lbl.Color = ColorTextSecondary
 										return lbl.Layout(gtx)
 									})

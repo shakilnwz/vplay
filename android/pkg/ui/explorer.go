@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"image"
+	"sort"
 	"time"
 
 	"gioui.org/layout"
@@ -31,6 +32,7 @@ type Explorer struct {
 	btnSort      widget.Clickable
 	btnClose     widget.Clickable
 	btnBackFolder widget.Clickable
+	btnRescan    widget.Clickable
 
 	// Resume prompt modal
 	resumePendingVideo *appstate.VideoItem
@@ -104,6 +106,10 @@ func (ex *Explorer) handleEvents(gtx layout.Context) {
 	if ex.btnBackFolder.Clicked(gtx) {
 		ex.currentFolder = ""
 	}
+	if ex.btnRescan.Clicked(gtx) {
+		videos := storage.ScanDefaultStorageLocations()
+		ex.SetVideos(videos)
+	}
 	if ex.btnSort.Clicked(gtx) {
 		switch ex.sortOrder {
 		case storage.SortDateNewest:
@@ -140,9 +146,10 @@ func (ex *Explorer) handleEvents(gtx layout.Context) {
 func (ex *Explorer) layoutHeader(gtx layout.Context, th *material.Theme) layout.Dimensions {
 	return layout.Background{}.Layout(gtx,
 		func(gtx layout.Context) layout.Dimensions {
-			defer clip.Rect{Max: gtx.Constraints.Max}.Push(gtx.Ops).Pop()
+			sz := image.Point{X: gtx.Constraints.Max.X, Y: gtx.Constraints.Min.Y}
+			defer clip.Rect{Max: sz}.Push(gtx.Ops).Pop()
 			paint.Fill(gtx.Ops, ColorSurface)
-			return layout.Dimensions{Size: gtx.Constraints.Max}
+			return layout.Dimensions{Size: sz}
 		},
 		func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{
@@ -155,12 +162,12 @@ func (ex *Explorer) layoutHeader(gtx layout.Context, th *material.Theme) layout.
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						if ex.currentFolder != "" {
 							return material.Clickable(gtx, &ex.btnBackFolder, func(gtx layout.Context) layout.Dimensions {
-								lbl := material.Body1(th, "◀ Folders")
+								lbl := material.Body1(th, "< Back")
 								lbl.Color = ColorPrimary
 								return lbl.Layout(gtx)
 							})
 						}
-						lbl := material.H6(th, "📁 Media Library")
+						lbl := material.H6(th, "Media Library")
 						lbl.Color = ColorTextPrimary
 						return lbl.Layout(gtx)
 					}),
@@ -175,6 +182,15 @@ func (ex *Explorer) layoutHeader(gtx layout.Context, th *material.Theme) layout.
 						return layout.Dimensions{}
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return layout.Inset{Right: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							return material.Clickable(gtx, &ex.btnRescan, func(gtx layout.Context) layout.Dimensions {
+								lbl := material.Caption(th, "Rescan")
+								lbl.Color = ColorPrimary
+								return lbl.Layout(gtx)
+							})
+						})
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return material.Clickable(gtx, &ex.btnSort, func(gtx layout.Context) layout.Dimensions {
 							lbl := material.Caption(th, fmt.Sprintf("Sort: %s", ex.sortOrder))
 							lbl.Color = ColorPrimary
@@ -184,7 +200,7 @@ func (ex *Explorer) layoutHeader(gtx layout.Context, th *material.Theme) layout.
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Left: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 							return material.Clickable(gtx, &ex.btnClose, func(gtx layout.Context) layout.Dimensions {
-								lbl := material.Body1(th, "✕")
+								lbl := material.Body1(th, "X")
 								lbl.Color = ColorTextSecondary
 								return lbl.Layout(gtx)
 							})
@@ -201,6 +217,7 @@ func (ex *Explorer) layoutFolderList(gtx layout.Context, th *material.Theme) lay
 	for name := range ex.folders {
 		folderNames = append(folderNames, name)
 	}
+	sort.Strings(folderNames)
 
 	if len(ex.folderClicks) < len(folderNames) {
 		ex.folderClicks = make([]widget.Clickable, len(folderNames))
@@ -229,7 +246,8 @@ func (ex *Explorer) layoutFolderList(gtx layout.Context, th *material.Theme) lay
 						return layout.UniformInset(unit.Dp(16)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 							return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-									lbl := material.H5(th, "📁")
+									lbl := material.Body1(th, "[DIR]")
+									lbl.Color = ColorPrimary
 									return lbl.Layout(gtx)
 								}),
 								layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
@@ -249,7 +267,7 @@ func (ex *Explorer) layoutFolderList(gtx layout.Context, th *material.Theme) lay
 									})
 								}),
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-									lbl := material.Body2(th, "▶")
+									lbl := material.Body1(th, ">")
 									lbl.Color = ColorPrimary
 									return lbl.Layout(gtx)
 								}),

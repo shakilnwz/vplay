@@ -39,11 +39,17 @@ fi
 
 echo "Target architecture: $ARCH"
 
+KEYSTORE_ARG=()
+if [ -f "debug.keystore" ]; then
+    KEYSTORE_ARG=(-signkey "debug.keystore" -signpass "android")
+fi
+
 "$GOGIO_BIN" -target android \
     -appid com.lerd.vrplayer \
     "${ARCH_ARG[@]}" \
+    "${KEYSTORE_ARG[@]}" \
     -minsdk 24 \
-    -targetsdk 34 \
+    -targetsdk 32 \
     -o "$OUT" \
     ./cmd/vrplayer
 
