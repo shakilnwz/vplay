@@ -99,16 +99,16 @@ vr-player/
 - [x] Handle orientation locking via JNI call to `Activity.setRequestedOrientation`.
 
 ### Phase 5: Direct MX Player UI & Gesture Engine (No Throwaway UI)
-- [ ] Implement cinema dark theme and custom Gio immediate-mode widgets in `android/pkg/ui/theme.go`.
-- [ ] Build MX Player OSD (`pkg/ui/overlay.go`) directly in final form (3.5s auto-hide fade):
+- [x] Implement cinema dark theme and custom Gio immediate-mode widgets in `android/pkg/ui/theme.go`.
+- [x] Build MX Player OSD (`pkg/ui/overlay.go`) directly in final form (3.5s auto-hide fade):
   - **Top Bar**: Back button, Marquee auto-scrolling title, `[HW]` decoder badge, Audio track popup, Subtitle selector, Screen Lock toggle, Settings gear.
   - **Tactile Scrubber**: Thin timeline expanding on touch, buffered range indicator, draggable thumb with timestamp preview bubble, elapsed time vs remaining countdown.
   - **Transport**: Prev, -10s, Large Center Play/Pause, +10s, Next, Repeat mode.
   - **Utility Bar**: Aspect ratio cycler (`Fit`, `Stretch`, `Crop`, `100%`), Playback speed popup (`0.5x` - `2.0x`), Fullscreen toggle.
-- [ ] Implement MX Player Screen Lock (`pkg/ui/lock.go`):
+- [x] Implement MX Player Screen Lock (`pkg/ui/lock.go`):
   - Complete gesture & touch isolation during viewing.
   - Subtle floating lock badge with double-tap unlock security.
-- [ ] Build Floating VR & Stereoscopic Quick-Bar (`pkg/ui/vrbar.go`):
+- [x] Build Floating VR & Stereoscopic Quick-Bar (`pkg/ui/vrbar.go`):
   - One-tap toggle between MX 2D Flat mode, 360° Sphere, 180° Dome, and Curved Cinema.
   - Stereoscopic chips: Mono 2D, SBS Horizontal, SBS Vertical, Swap Eyes (Invert).
   - Recenter View button (`🎯`) to instantly realign VR camera heading.
