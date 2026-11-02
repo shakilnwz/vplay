@@ -114,15 +114,15 @@ vr-player/
   - Recenter View button (`🎯`) to instantly realign VR camera heading.
 
 ### Phase 6: SAF & MX Player Folder Explorer (`pkg/ui/explorer.go` + `pkg/storage/`)
-- [ ] Implement `android/pkg/storage/saf_android.go`: Launch `ACTION_OPEN_DOCUMENT_TREE` with `FLAG_GRANT_PERSISTABLE_URI_PERMISSION`.
-- [ ] Traverse directory tree with `DocumentsContract` to index video files.
-- [ ] Extract duration, resolution, and thumbnail frames using `MediaMetadataRetriever`.
-- [ ] Build MX Player Folder Explorer (`pkg/ui/explorer.go`):
+- [x] Implement `android/pkg/storage/saf_android.go`: Launch `ACTION_OPEN_DOCUMENT_TREE` with `FLAG_GRANT_PERSISTABLE_URI_PERMISSION`.
+- [x] Traverse directory tree with `DocumentsContract` to index video files.
+- [x] Extract duration, resolution, and thumbnail frames using `MediaMetadataRetriever`.
+- [x] Build MX Player Folder Explorer (`pkg/ui/explorer.go`):
   - **Folder-First View**: Directories with video counts and `[NEW]` badges.
   - **Inside Folder View**: Video cards with thumbnails, duration pills, specs badges (`4K`, `60fps`, `SBS`), and watched progress lines.
   - **Resume Dialog**: "Resume playback from 14:32? [Resume] [Start Over]" with position persistence in config.
   - Real-time debounced search and sorting (Name, Date, Length, Size).
-- [ ] Pass file descriptors (`ParcelFileDescriptor.getFd()`) directly to hardware decoder.
+- [x] Pass file descriptors (`ParcelFileDescriptor.getFd()`) directly to hardware decoder.
 
 ### Phase 7: Web Application Maintenance & File Selection Fix
 - [ ] Fix file input in `src/hooks/useFileHandler.ts`:

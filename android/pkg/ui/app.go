@@ -23,23 +23,43 @@ type App struct {
 	Overlay    *Overlay
 	LockMgr    *LockScreenManager
 	Gestures   *GestureHandler
+	Explorer   *Explorer
 }
 
 // NewApp creates a new UI coordinator instance.
 func NewApp(state *appstate.AppState) *App {
-	return &App{
+	overlay := NewOverlay()
+	explorer := NewExplorer()
+
+	app := &App{
 		State:    state,
 		Theme:    NewTheme(),
-		Overlay:  NewOverlay(),
+		Overlay:  overlay,
 		LockMgr:  NewLockScreenManager(),
 		Gestures: NewGestureHandler(),
+		Explorer: explorer,
 	}
+
+	overlay.OnOpenDrawer = func() {
+		state.FolderDrawerOpen = true
+	}
+	explorer.OnClose = func() {
+		state.FolderDrawerOpen = false
+	}
+	explorer.OnSelectVideo = func(v appstate.VideoItem, startFrom time.Duration) {
+		state.CurrentVideo = &v
+		state.Position = startFrom
+		state.IsPlaying = true
+		state.FolderDrawerOpen = false
+	}
+
+	return app
 }
 
 // Layout renders the entire player interface for the current frame.
 func (a *App) Layout(gtx layout.Context) layout.Dimensions {
 	// Auto-hide controls check: if playing and controls visible for >3.5s with no user input
-	if a.State.IsPlaying && a.State.ControlsVisible && !a.State.IsLocked {
+	if a.State.IsPlaying && a.State.ControlsVisible && !a.State.IsLocked && !a.State.FolderDrawerOpen {
 		if time.Since(a.State.LastUserAction) > 3500*time.Millisecond {
 			a.State.ControlsVisible = false
 			gtx.Execute(op.InvalidateCmd{})
@@ -57,7 +77,7 @@ func (a *App) Layout(gtx layout.Context) layout.Dimensions {
 
 		// Layer 1: Gesture recognizer (single-finger 360 drag, brightness/volume swipes, pinch FOV)
 		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
-			if !a.State.IsLocked {
+			if !a.State.IsLocked && !a.State.FolderDrawerOpen {
 				return a.Gestures.Layout(gtx, a.State)
 			}
 			return layout.Dimensions{}
@@ -65,7 +85,7 @@ func (a *App) Layout(gtx layout.Context) layout.Dimensions {
 
 		// Layer 2: On-Screen Display (OSD) controls when visible
 		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
-			if a.State.ControlsVisible && !a.State.IsLocked {
+			if a.State.ControlsVisible && !a.State.IsLocked && !a.State.FolderDrawerOpen {
 				return a.Overlay.Layout(gtx, a.Theme, a.State)
 			}
 			return layout.Dimensions{}
@@ -73,7 +93,10 @@ func (a *App) Layout(gtx layout.Context) layout.Dimensions {
 
 		// Layer 3: Dynamic MX Player HUD overlays (Brightness, Volume 200%, Seek Preview)
 		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
-			return a.layoutHUDOverlays(gtx)
+			if !a.State.FolderDrawerOpen {
+				return a.layoutHUDOverlays(gtx)
+			}
+			return layout.Dimensions{}
 		}),
 
 		// Layer 4: Screen Lock touch interceptor (when locked)
@@ -84,6 +107,14 @@ func (a *App) Layout(gtx layout.Context) layout.Dimensions {
 		// Layer 5: Screen Lock floating badge
 		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
 			return a.LockMgr.LayoutLockBadge(gtx, a.Theme, a.State)
+		}),
+
+		// Layer 6: MX Player Folder Explorer (when open)
+		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+			if a.State.FolderDrawerOpen {
+				return a.Explorer.Layout(gtx, a.Theme, a.State)
+			}
+			return layout.Dimensions{}
 		}),
 	)
 }

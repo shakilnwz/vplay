@@ -127,3 +127,17 @@ func FilterVideos(videos []appstate.VideoItem, query, tag string) []appstate.Vid
 
 	return filtered
 }
+
+// GroupVideosByFolder groups a flat list of videos into folder buckets.
+func GroupVideosByFolder(videos []appstate.VideoItem) map[string][]appstate.VideoItem {
+	folders := make(map[string][]appstate.VideoItem)
+	for _, v := range videos {
+		dir := filepath.Dir(v.Path)
+		folderName := filepath.Base(dir)
+		if folderName == "" || folderName == "." {
+			folderName = "Internal Storage"
+		}
+		folders[folderName] = append(folders[folderName], v)
+	}
+	return folders
+}
