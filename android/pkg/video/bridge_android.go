@@ -14,6 +14,14 @@ package video
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
+static bool isNullJObject(jobject obj) {
+    return obj == NULL;
+}
+
+static jobject nullJObject(void) {
+    return NULL;
+}
+
 static JNIEnv* getJNIEnv(JavaVM* vm) {
     JNIEnv* env = NULL;
     if ((*vm)->GetEnv(vm, (void**)&env, JNI_VERSION_1_6) != JNI_OK) {
@@ -243,6 +251,11 @@ type AndroidPlayer struct {
 	height    int
 }
 
+// New creates a platform-appropriate hardware video player.
+func New(texID uint32) (Player, error) {
+	return NewAndroidPlayer(texID)
+}
+
 // NewAndroidPlayer initializes hardware player attached to the given GL external texture ID.
 func NewAndroidPlayer(texID uint32) (*AndroidPlayer, error) {
 	jvmPtr := app.JavaVM()
@@ -258,7 +271,7 @@ func NewAndroidPlayer(texID uint32) (*AndroidPlayer, error) {
 	}
 
 	mp := C.createMediaPlayer(vm, surface)
-	if mp == nil {
+	if bool(C.isNullJObject(mp)) {
 		C.releaseGlobalRef(vm, st)
 		C.releaseGlobalRef(vm, surface)
 		return nil, errors.New("failed to initialize Android MediaPlayer")
@@ -316,17 +329,17 @@ func (p *AndroidPlayer) Release() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if p.mediaPlayer != nil {
+	if !bool(C.isNullJObject(p.mediaPlayer)) {
 		C.releaseGlobalRef(p.vm, p.mediaPlayer)
-		p.mediaPlayer = nil
+		p.mediaPlayer = C.nullJObject()
 	}
-	if p.surface != nil {
+	if !bool(C.isNullJObject(p.surface)) {
 		C.releaseGlobalRef(p.vm, p.surface)
-		p.surface = nil
+		p.surface = C.nullJObject()
 	}
-	if p.surfaceTex != nil {
+	if !bool(C.isNullJObject(p.surfaceTex)) {
 		C.releaseGlobalRef(p.vm, p.surfaceTex)
-		p.surfaceTex = nil
+		p.surfaceTex = C.nullJObject()
 	}
 	p.state = StateIdle
 }

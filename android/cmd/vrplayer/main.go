@@ -9,13 +9,56 @@ import (
 	"gioui.org/op"
 	"gioui.org/unit"
 	"github.com/shakilnwz/vplay/android/pkg/appstate"
+	"github.com/shakilnwz/vplay/android/pkg/sensor"
 	"github.com/shakilnwz/vplay/android/pkg/storage"
 	"github.com/shakilnwz/vplay/android/pkg/ui"
+	"github.com/shakilnwz/vplay/android/pkg/video"
 )
 
 func main() {
 	state := appstate.New()
 	playerUI := ui.NewApp(state)
+
+	// Initialize video player and sensor tracking backends
+	backendPlayer, _ := video.New(0)
+	sensorTracker := sensor.NewTracker()
+	sensorListener := sensor.NewSensorListener(sensorTracker)
+	_ = sensorListener.Start()
+
+	// Connect UI transport controls to playback backend
+	playerUI.Overlay.OnPlayPause = func() {
+		if backendPlayer != nil {
+			if state.IsPlaying {
+				_ = backendPlayer.Play()
+			} else {
+				_ = backendPlayer.Pause()
+			}
+		}
+	}
+
+	playerUI.Overlay.OnSeek = func(target time.Duration) {
+		if backendPlayer != nil {
+			_ = backendPlayer.Seek(target)
+		}
+	}
+
+	playerUI.Overlay.VRBar.OnRecenter = func() {
+		sensorTracker.Recenter()
+	}
+
+	oldSelectVideo := playerUI.Explorer.OnSelectVideo
+	playerUI.Explorer.OnSelectVideo = func(v appstate.VideoItem, startFrom time.Duration) {
+		if oldSelectVideo != nil {
+			oldSelectVideo(v, startFrom)
+		}
+		if backendPlayer != nil {
+			_ = backendPlayer.OpenURI(v.URI)
+			if startFrom > 0 {
+				_ = backendPlayer.Seek(startFrom)
+			}
+			_ = backendPlayer.Play()
+		}
+	}
 
 	// Populate initial library videos with samples and scanned media
 	videos := []appstate.VideoItem{
@@ -45,6 +88,27 @@ func main() {
 		videos = append(videos, local...)
 	}
 	playerUI.Explorer.SetVideos(videos)
+
+	// Sync playback state periodically
+	go func() {
+		ticker := time.NewTicker(250 * time.Millisecond)
+		defer ticker.Stop()
+		for range ticker.C {
+			if backendPlayer != nil && state.IsPlaying {
+				pos := backendPlayer.Position()
+				dur := backendPlayer.Duration()
+				if dur > 0 {
+					state.Duration = dur
+				}
+				if pos > 0 {
+					state.Position = pos
+				}
+				if playerUI.Invalidate != nil {
+					playerUI.Invalidate()
+				}
+			}
+		}
+	}()
 
 	go func() {
 		// Default landscape orientation preferred for VR and video viewing

@@ -21,6 +21,11 @@ type DesktopPlayer struct {
 	startTime      time.Time
 }
 
+// New creates a platform-appropriate video player.
+func New(texID uint32) (Player, error) {
+	return NewDesktopPlayer(texID)
+}
+
 // NewDesktopPlayer creates a fallback player for desktop environments.
 func NewDesktopPlayer(texID uint32) (*DesktopPlayer, error) {
 	var identity [16]float32
