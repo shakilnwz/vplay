@@ -68,19 +68,19 @@ vr-player/
 - [x] Validate compilation with `gogio -target android -appid com.lerd.vrplayer -o test.apk ./android/cmd/vrplayer`.
 
 ### Phase 2: Hardware Video Decoding & GLES 3.0 Pipeline (Android)
-- [ ] Implement `android/pkg/video`: Android `SurfaceTexture` creation and JNI/Cgo bridge to `MediaPlayer` / `MediaCodec`.
-- [ ] Implement `android/pkg/render/glengine.go`: Setup OpenGL ES 3.0 context within Gio's rendering surface.
-- [ ] Implement GLSL ES 3.0 vertex & fragment shaders with `#extension GL_OES_EGL_image_external_essl3 : require`.
-- [ ] Implement SBS uniform logic (Horizontal SBS, Vertical SBS, stereo inversion, standard mono).
-- [ ] Connect `SurfaceTexture.updateTexImage()` to the render loop for zero-copy 60fps frame streaming.
+- [x] Implement `android/pkg/video`: Android `SurfaceTexture` creation and JNI/Cgo bridge to `MediaPlayer` / `MediaCodec`.
+- [x] Implement `android/pkg/render/glengine.go`: Setup OpenGL ES 3.0 context within Gio's rendering surface.
+- [x] Implement GLSL ES 3.0 vertex & fragment shaders with `#extension GL_OES_EGL_image_external_essl3 : require`.
+- [x] Implement SBS uniform logic (Horizontal SBS, Vertical SBS, stereo inversion, standard mono).
+- [x] Connect `SurfaceTexture.updateTexImage()` to the render loop for zero-copy 60fps frame streaming.
 
 ### Phase 3: 3D Geometries & Camera Navigation (Android)
-- [ ] Implement `android/pkg/render/mesh.go`:
+- [x] Implement `android/pkg/render/mesh.go`:
   - 360° Equirectangular sphere mesh (inward normals, UV coordinates).
   - 180° Dome mesh (front hemisphere).
   - 2D Flat plane mesh (with aspect-ratio matching).
-- [ ] Implement `android/pkg/render/matrix.go`: MVP matrix stack, Euler angles, quaternion camera rotations.
-- [ ] Implement MX Player gesture engine in `android/pkg/ui/gestures.go`:
+- [x] Implement `android/pkg/render/matrix.go`: MVP matrix stack, Euler angles, quaternion camera rotations.
+- [x] Implement MX Player gesture engine in `android/pkg/ui/gestures.go`:
   - Single-finger drag (in VR 360°/180°): Full 360° panoramic camera navigation (pitch/yaw look-around) with inertia damping.
   - Left 15% margin vertical swipe: Screen Brightness HUD (0% - 100%).
   - Right 15% margin vertical swipe: Media Volume HUD (0 - 15 + MX 200% boost).
@@ -92,11 +92,11 @@ vr-player/
   - Long-press hold: Instant 2x fast-forward preview.
 
 ### Phase 4: Head Tracking & Sensor Fusion (Android)
-- [ ] Implement `android/pkg/sensor/sensor_android.go`: Cgo integration with NDK `<android/sensor.h>`.
-- [ ] Subscribe to `ASENSOR_TYPE_ROTATION_VECTOR` at 100Hz without Java GC pauses.
-- [ ] Implement sensor offset calibration (reference point reset when user touches screen or presses "Reset View").
-- [ ] Implement quaternion slerp/damping filter to eliminate jitter.
-- [ ] Handle orientation locking via JNI call to `Activity.setRequestedOrientation`.
+- [x] Implement `android/pkg/sensor/sensor_android.go`: Cgo integration with NDK `<android/sensor.h>`.
+- [x] Subscribe to `ASENSOR_TYPE_ROTATION_VECTOR` at 100Hz without Java GC pauses.
+- [x] Implement sensor offset calibration (reference point reset when user touches screen or presses "Reset View").
+- [x] Implement quaternion slerp/damping filter to eliminate jitter.
+- [x] Handle orientation locking via JNI call to `Activity.setRequestedOrientation`.
 
 ### Phase 5: Direct MX Player UI & Gesture Engine (No Throwaway UI)
 - [ ] Implement cinema dark theme and custom Gio immediate-mode widgets in `android/pkg/ui/theme.go`.
