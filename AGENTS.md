@@ -61,11 +61,11 @@ vr-player/
 ## Phased Implementation Roadmap
 
 ### Phase 1: Go & Gio Android Project Foundation
-- [ ] Initialize `android/` Go module (`go.mod`).
-- [ ] Install and verify `gogio` (`go install gioui.org/cmd/gogio@latest`).
-- [ ] Scaffold `android/cmd/vrplayer/main.go` with minimal Gio `app.NewWindow` event loop.
-- [ ] Configure `AndroidManifest.xml` with required OpenGL ES 3.0 features and storage permissions.
-- [ ] Validate compilation with `gogio -target android -appid com.lerd.vrplayer -o test.apk ./android/cmd/vrplayer`.
+- [x] Initialize `android/` Go module (`go.mod`).
+- [x] Install and verify `gogio` (`go install gioui.org/cmd/gogio@latest`).
+- [x] Scaffold `android/cmd/vrplayer/main.go` with minimal Gio `app.NewWindow` event loop.
+- [x] Configure `AndroidManifest.xml` with required OpenGL ES 3.0 features and storage permissions.
+- [x] Validate compilation with `gogio -target android -appid com.lerd.vrplayer -o test.apk ./android/cmd/vrplayer`.
 
 ### Phase 2: Hardware Video Decoding & GLES 3.0 Pipeline (Android)
 - [ ] Implement `android/pkg/video`: Android `SurfaceTexture` creation and JNI/Cgo bridge to `MediaPlayer` / `MediaCodec`.
