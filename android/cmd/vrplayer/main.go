@@ -43,6 +43,36 @@ func main() {
 		}
 	}
 
+	playerUI.Overlay.OnVolume = func(vol float32) {
+		if backendPlayer != nil {
+			_ = backendPlayer.SetVolume(vol)
+		}
+	}
+
+	playerUI.Overlay.OnPlaybackSpeed = func(speed float32) {
+		if backendPlayer != nil {
+			_ = backendPlayer.SetPlaybackSpeed(speed)
+		}
+	}
+
+	playerUI.Gestures.OnSeek = func(target time.Duration) {
+		if backendPlayer != nil {
+			_ = backendPlayer.Seek(target)
+		}
+	}
+
+	playerUI.Gestures.OnVolume = func(vol float32) {
+		if backendPlayer != nil {
+			_ = backendPlayer.SetVolume(vol)
+		}
+	}
+
+	playerUI.Gestures.OnPlaybackSpeed = func(speed float32) {
+		if backendPlayer != nil {
+			_ = backendPlayer.SetPlaybackSpeed(speed)
+		}
+	}
+
 	playerUI.Overlay.OnRecenter = func() {
 		sensorTracker.Recenter()
 	}
@@ -58,13 +88,23 @@ func main() {
 				_ = backendPlayer.Seek(startFrom)
 			}
 			_ = backendPlayer.Play()
+			w, h := backendPlayer.VideoDimensions()
+			if w > 0 && h > 0 {
+				v.Width = w
+				v.Height = h
+			}
+			dur := backendPlayer.Duration()
+			if dur > 0 {
+				v.Duration = dur
+				state.Duration = dur
+			}
 		}
 	}
 
 	// Populate initial library videos by scanning device storage (Movies, Downloads, DCIM)
 	videos := storage.ScanDefaultStorageLocations()
 
-	// Append sample VR videos
+	// Append valid demo online stream
 	samples := []appstate.VideoItem{
 		{
 			URI:          "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
@@ -72,20 +112,6 @@ func main() {
 			Path:         "Samples/BigBuckBunny.mp4",
 			Duration:     596 * time.Second,
 			LastPosition: 45 * time.Second,
-		},
-		{
-			URI:          "sample_vr_360.mp4",
-			Title:        "Rollercoaster 360 VR",
-			Path:         "VR 360/rollercoaster_360.mp4",
-			Duration:     180 * time.Second,
-			LastPosition: 0,
-		},
-		{
-			URI:          "sample_sbs_180.mp4",
-			Title:        "Space Station SBS 3D 180",
-			Path:         "VR 180 SBS/spacestation_sbs.mp4",
-			Duration:     320 * time.Second,
-			LastPosition: 120 * time.Second,
 		},
 	}
 	videos = append(videos, samples...)
@@ -99,7 +125,7 @@ func main() {
 		ticker := time.NewTicker(250 * time.Millisecond)
 		defer ticker.Stop()
 		for range ticker.C {
-			if backendPlayer != nil && state.IsPlaying {
+			if backendPlayer != nil && state.IsPlaying && !playerUI.Overlay.IsScrubberDragging() && !playerUI.Gestures.IsSeeking() {
 				pos := backendPlayer.Position()
 				dur := backendPlayer.Duration()
 				if dur > 0 {

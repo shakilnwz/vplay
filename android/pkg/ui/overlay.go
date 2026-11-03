@@ -39,12 +39,20 @@ type Overlay struct {
 	btnSwapEyes  widget.Clickable
 	btnGyro      widget.Clickable
 	btnLock      widget.Clickable
+	btnAspect    widget.Clickable
 
 	// Callbacks
-	OnPlayPause  func()
-	OnSeek       func(target time.Duration)
-	OnRecenter   func()
-	OnOpenDrawer func()
+	OnPlayPause     func()
+	OnSeek          func(target time.Duration)
+	OnRecenter      func()
+	OnOpenDrawer    func()
+	OnVolume        func(volume float32)
+	OnPlaybackSpeed func(speed float32)
+}
+
+// IsScrubberDragging reports if the timeline scrubber is currently held.
+func (o *Overlay) IsScrubberDragging() bool {
+	return o.scrubber.Dragging()
 }
 
 // NewOverlay creates an initialized Controls overlay.
@@ -122,6 +130,13 @@ func (o *Overlay) handleEvents(gtx layout.Context, state *appstate.AppState) {
 	if o.btnVolume.Clicked(gtx) {
 		state.TouchActivity()
 		state.IsMuted = !state.IsMuted
+		if o.OnVolume != nil {
+			if state.IsMuted {
+				o.OnVolume(0)
+			} else {
+				o.OnVolume(state.Volume)
+			}
+		}
 	}
 
 	if o.btnSpeed.Clicked(gtx) {
@@ -140,6 +155,9 @@ func (o *Overlay) handleEvents(gtx layout.Context, state *appstate.AppState) {
 		default:
 			state.PlaybackSpeed = 1.0
 		}
+		if o.OnPlaybackSpeed != nil {
+			o.OnPlaybackSpeed(state.PlaybackSpeed)
+		}
 	}
 
 	if o.btnViewMode.Clicked(gtx) {
@@ -148,9 +166,25 @@ func (o *Overlay) handleEvents(gtx layout.Context, state *appstate.AppState) {
 		case appstate.ViewMode360:
 			state.ViewMode = appstate.ViewMode180
 		case appstate.ViewMode180:
+			state.ViewMode = appstate.ViewModeCurved
+		case appstate.ViewModeCurved:
 			state.ViewMode = appstate.ViewModeFlat
 		default:
 			state.ViewMode = appstate.ViewMode360
+		}
+	}
+
+	if o.btnAspect.Clicked(gtx) {
+		state.TouchActivity()
+		switch state.AspectRatio {
+		case appstate.AspectFit:
+			state.AspectRatio = appstate.AspectStretch
+		case appstate.AspectStretch:
+			state.AspectRatio = appstate.AspectCrop
+		case appstate.AspectCrop:
+			state.AspectRatio = appstate.Aspect100
+		default:
+			state.AspectRatio = appstate.AspectFit
 		}
 	}
 
@@ -402,11 +436,27 @@ func (o *Overlay) layoutExpandedContent(gtx layout.Context, th *material.Theme, 
 						modeStr := "360°"
 						if state.ViewMode == appstate.ViewMode180 {
 							modeStr = "180°"
+						} else if state.ViewMode == appstate.ViewModeCurved {
+							modeStr = "Curved"
 						} else if state.ViewMode == appstate.ViewModeFlat {
 							modeStr = "Flat"
 						}
 						return layout.Inset{Left: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 							return o.layoutChip(gtx, th, &o.btnViewMode, modeStr, true)
+						})
+					},
+					func(gtx layout.Context) layout.Dimensions {
+						aspectStr := "Fit"
+						switch state.AspectRatio {
+						case appstate.AspectStretch:
+							aspectStr = "Stretch"
+						case appstate.AspectCrop:
+							aspectStr = "Crop"
+						case appstate.Aspect100:
+							aspectStr = "100%"
+						}
+						return layout.Inset{Left: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							return o.layoutChip(gtx, th, &o.btnAspect, aspectStr, false)
 						})
 					},
 					func(gtx layout.Context) layout.Dimensions {

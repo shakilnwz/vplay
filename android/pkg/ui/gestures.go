@@ -14,18 +14,33 @@ import (
 
 // GestureHandler manages MX Player multi-touch gesture disambiguation.
 type GestureHandler struct {
-	dragStartPos   [2]float32
-	lastDragPos    [2]float32
-	isDragging     bool
-	dragZone       string // "left", "right", "center"
-	lastTapTime    time.Time
-	lastTapPos     [2]float32
-	tapCount       int
+	dragStartPos     [2]float32
+	lastDragPos      [2]float32
+	dragStartTime    time.Time
+	lastDragTime     time.Time
+	isDragging       bool
+	dragZone         string // "left", "right", "center"
+	lastTapTime      time.Time
+	lastTapPos       [2]float32
+	tapCount         int
+
+	// Callbacks wired to Player backend
+	OnSeek          func(target time.Duration)
+	OnVolume        func(volume float32)
+	OnPlaybackSpeed func(speed float32)
+
+	// Long press 2x speed preview
+	isLongPressing   bool
+	prevSpeed        float32
+
+	// VR Drag Inertia
+	inertiaVX        float32
+	inertiaVY        float32
 
 	// Multi-touch pinch tracking
-	activeTouches  map[pointer.ID][2]float32
+	activeTouches    map[pointer.ID][2]float32
 	initialPinchDist float32
-	initialFOV     float32
+	initialFOV       float32
 }
 
 // NewGestureHandler creates an initialized gesture recognizer.
@@ -33,6 +48,11 @@ func NewGestureHandler() *GestureHandler {
 	return &GestureHandler{
 		activeTouches: make(map[pointer.ID][2]float32),
 	}
+}
+
+// IsSeeking returns true if user is scrubbing the timeline via horizontal drag.
+func (gh *GestureHandler) IsSeeking() bool {
+	return gh.isDragging && gh.dragZone == "center"
 }
 
 // Layout registers the pointer input operation and processes gestures.
@@ -44,6 +64,21 @@ func (gh *GestureHandler) Layout(gtx layout.Context, state *appstate.AppState) l
 
 	width := float32(gtx.Constraints.Max.X)
 	height := float32(gtx.Constraints.Max.Y)
+
+	// Apply damped VR camera inertia when finger is lifted
+	if !gh.isDragging && (math.Abs(float64(gh.inertiaVX)) > 0.0001 || math.Abs(float64(gh.inertiaVY)) > 0.0001) {
+		state.Yaw -= gh.inertiaVX
+		state.Pitch -= gh.inertiaVY
+		maxPitch := float32(85.0 * math.Pi / 180.0)
+		if state.Pitch > maxPitch {
+			state.Pitch = maxPitch
+		} else if state.Pitch < -maxPitch {
+			state.Pitch = -maxPitch
+		}
+		gh.inertiaVX *= 0.92
+		gh.inertiaVY *= 0.92
+		gtx.Execute(op.InvalidateCmd{})
+	}
 
 	for {
 		ev, ok := gtx.Event(pointer.Filter{
@@ -74,7 +109,11 @@ func (gh *GestureHandler) Layout(gtx layout.Context, state *appstate.AppState) l
 			if len(gh.activeTouches) == 1 {
 				gh.dragStartPos = [2]float32{pe.Position.X, pe.Position.Y}
 				gh.lastDragPos = gh.dragStartPos
+				gh.dragStartTime = time.Now()
+				gh.lastDragTime = gh.dragStartTime
 				gh.isDragging = true
+				gh.inertiaVX = 0
+				gh.inertiaVY = 0
 
 				// Disambiguate screen zone: Left 15% (Brightness), Right 15% (Volume), Center 70%
 				if pe.Position.X < width*0.15 {
@@ -132,15 +171,27 @@ func (gh *GestureHandler) Layout(gtx layout.Context, state *appstate.AppState) l
 					} else if state.Volume > 2.0 {
 						state.Volume = 2.0
 					}
+					if gh.OnVolume != nil {
+						gh.OnVolume(state.Volume)
+					}
 					gtx.Execute(op.InvalidateCmd{})
 
 				case "center":
 					// In VR mode: Single-finger drag pans/tilts the 360 camera!
-					if state.ViewMode == appstate.ViewMode360 || state.ViewMode == appstate.ViewMode180 {
+					if state.ViewMode == appstate.ViewMode360 || state.ViewMode == appstate.ViewMode180 || state.ViewMode == appstate.ViewModeCurved {
 						// Sensitivity scaling: ~1.5 radians per screen width
 						sensitivity := float32(1.8) / width
-						state.Yaw += deltaX * sensitivity
-						state.Pitch += deltaY * sensitivity
+						state.Yaw -= deltaX * sensitivity
+						state.Pitch -= deltaY * sensitivity
+
+						// Track inertia velocity
+						now := time.Now()
+						dt := float32(now.Sub(gh.lastDragTime).Seconds())
+						if dt > 0.001 {
+							gh.inertiaVX = (deltaX * sensitivity) / (dt * 60.0)
+							gh.inertiaVY = (deltaY * sensitivity) / (dt * 60.0)
+							gh.lastDragTime = now
+						}
 
 						// Clamp vertical pitch to avoid gimbal lock (-85 deg to +85 deg)
 						maxPitch := float32(85.0 * math.Pi / 180.0)
@@ -156,6 +207,18 @@ func (gh *GestureHandler) Layout(gtx layout.Context, state *appstate.AppState) l
 						state.SeekDeltaSeconds += float64(deltaX) * 0.1
 						gtx.Execute(op.InvalidateCmd{})
 					}
+
+					// Long-press 2x speed preview detection in center zone
+					totalMove := float32(math.Hypot(float64(pe.Position.X-gh.dragStartPos[0]), float64(pe.Position.Y-gh.dragStartPos[1])))
+					if totalMove < 25.0 && time.Since(gh.dragStartTime) > 400*time.Millisecond && !gh.isLongPressing {
+						gh.isLongPressing = true
+						gh.prevSpeed = state.PlaybackSpeed
+						state.PlaybackSpeed = 2.0
+						if gh.OnPlaybackSpeed != nil {
+							gh.OnPlaybackSpeed(2.0)
+						}
+						gtx.Execute(op.InvalidateCmd{})
+					}
 				}
 			}
 
@@ -165,7 +228,37 @@ func (gh *GestureHandler) Layout(gtx layout.Context, state *appstate.AppState) l
 				gh.isDragging = false
 				state.ShowBrightnessHUD = false
 				state.ShowVolumeHUD = false
-				state.ShowSeekHUD = false
+
+				// Reset long-press speed if active
+				if gh.isLongPressing {
+					gh.isLongPressing = false
+					state.PlaybackSpeed = gh.prevSpeed
+					if gh.OnPlaybackSpeed != nil {
+						gh.OnPlaybackSpeed(gh.prevSpeed)
+					}
+					gtx.Execute(op.InvalidateCmd{})
+				}
+
+				// Apply scrub seek from 2D flat mode horizontal drag
+				if state.ShowSeekHUD && state.SeekDeltaSeconds != 0 {
+					targetSec := state.Position.Seconds() + state.SeekDeltaSeconds
+					if targetSec < 0 {
+						targetSec = 0
+					}
+					target := time.Duration(targetSec * float64(time.Second))
+					if state.Duration > 0 && target > state.Duration {
+						target = state.Duration
+					}
+					state.Position = target
+					state.SeekDeltaSeconds = 0
+					state.ShowSeekHUD = false
+					if gh.OnSeek != nil {
+						gh.OnSeek(target)
+					}
+					gtx.Execute(op.InvalidateCmd{})
+				} else {
+					state.ShowSeekHUD = false
+				}
 
 				// Check tap vs drag distance
 				totalDist := float32(math.Hypot(float64(pe.Position.X-gh.dragStartPos[0]), float64(pe.Position.Y-gh.dragStartPos[1])))
@@ -204,9 +297,18 @@ func (gh *GestureHandler) handleTap(gtx layout.Context, tapX, screenWidth float3
 			} else {
 				state.Position = 0
 			}
+			if gh.OnSeek != nil {
+				gh.OnSeek(state.Position)
+			}
 		} else if tapX > screenWidth*0.80 {
 			// Double tap right 20%: +10s seek
 			state.Position += 10 * time.Second
+			if state.Duration > 0 && state.Position > state.Duration {
+				state.Position = state.Duration
+			}
+			if gh.OnSeek != nil {
+				gh.OnSeek(state.Position)
+			}
 		} else {
 			// Double tap center: Play/Pause
 			state.TogglePlayPause()

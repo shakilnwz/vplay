@@ -14,14 +14,15 @@ import (
 
 // VRBar manages the floating VR projection and stereoscopic format quick-switcher.
 type VRBar struct {
-	btn360     widget.Clickable
-	btn180     widget.Clickable
-	btnFlat    widget.Clickable
-	btnSBSH    widget.Clickable
-	btnSBSV    widget.Clickable
-	btnInvert  widget.Clickable
+	btn360      widget.Clickable
+	btn180      widget.Clickable
+	btnCurved   widget.Clickable
+	btnFlat     widget.Clickable
+	btnSBSH     widget.Clickable
+	btnSBSV     widget.Clickable
+	btnInvert   widget.Clickable
 	btnRecenter widget.Clickable
-	OnRecenter func()
+	OnRecenter  func()
 }
 
 // NewVRBar creates an initialized VR quick bar.
@@ -39,6 +40,10 @@ func (vb *VRBar) Layout(gtx layout.Context, th *material.Theme, state *appstate.
 	if vb.btn180.Clicked(gtx) {
 		state.TouchActivity()
 		state.ViewMode = appstate.ViewMode180
+	}
+	if vb.btnCurved.Clicked(gtx) {
+		state.TouchActivity()
+		state.ViewMode = appstate.ViewModeCurved
 	}
 	if vb.btnFlat.Clicked(gtx) {
 		state.TouchActivity()
@@ -82,6 +87,10 @@ func (vb *VRBar) Layout(gtx layout.Context, th *material.Theme, state *appstate.
 			// Mode 180
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return vb.layoutChip(gtx, th, &vb.btn180, "180 Dome", state.ViewMode == appstate.ViewMode180)
+			}),
+			// Mode Curved
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return vb.layoutChip(gtx, th, &vb.btnCurved, "Curved Cinema", state.ViewMode == appstate.ViewModeCurved)
 			}),
 			// Mode Flat
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
