@@ -14,6 +14,7 @@ import (
 	"github.com/shakilnwz/vplay/android/pkg/render"
 	"github.com/shakilnwz/vplay/android/pkg/sensor"
 	"github.com/shakilnwz/vplay/android/pkg/shader"
+	"github.com/shakilnwz/vplay/android/pkg/storage"
 	"github.com/shakilnwz/vplay/android/pkg/ui"
 	"github.com/shakilnwz/vplay/android/pkg/video"
 )
@@ -44,8 +45,11 @@ func runEventLoop(w *app.Window, playerUI *ui.App, state *appstate.AppState, bac
 					glEngine = nil
 				}
 				currentView = 0
+				storage.SetAndroidView(0)
 			} else {
 				currentView = e.View
+				storage.CheckAndRequestOnce(e.View)
+				w.Invalidate()
 			}
 
 		case app.DestroyEvent:

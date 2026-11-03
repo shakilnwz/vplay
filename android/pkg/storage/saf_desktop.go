@@ -9,6 +9,24 @@ import (
 	"github.com/shakilnwz/vplay/android/pkg/appstate"
 )
 
+// SetAndroidView is a no-op on desktop.
+func SetAndroidView(view uintptr) {}
+
+// GetAndroidView returns 0 on desktop.
+func GetAndroidView() uintptr { return 0 }
+
+// HasStoragePermission always returns true on desktop.
+func HasStoragePermission() bool { return true }
+
+// RequestStoragePermission always returns true on desktop.
+func RequestStoragePermission() bool { return true }
+
+// CheckAndRequestOnce is a no-op on desktop.
+func CheckAndRequestOnce(view uintptr) {}
+
+// OpenAppSettings is a no-op on desktop.
+func OpenAppSettings() {}
+
 // ScanDirectory walks a local folder and extracts all video files.
 func ScanDirectory(dirPath string) ([]appstate.VideoItem, error) {
 	var videos []appstate.VideoItem

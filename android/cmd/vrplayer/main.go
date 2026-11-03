@@ -120,6 +120,24 @@ func main() {
 	// Open the Media Explorer by default so the user can immediately select a video
 	state.FolderDrawerOpen = true
 
+	// Watch for storage permission grant to automatically populate local files
+	go func() {
+		for i := 0; i < 30; i++ {
+			time.Sleep(1 * time.Second)
+			if storage.HasStoragePermission() {
+				localVids := storage.ScanDefaultStorageLocations()
+				all := append(localVids, samples...)
+				playerUI.Explorer.SetVideos(all)
+				if playerUI.Invalidate != nil {
+					playerUI.Invalidate()
+				}
+				if len(localVids) > 0 {
+					break
+				}
+			}
+		}
+	}()
+
 	// Sync playback state periodically
 	go func() {
 		ticker := time.NewTicker(250 * time.Millisecond)

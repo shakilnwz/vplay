@@ -28,11 +28,13 @@ type Explorer struct {
 	folders       map[string][]appstate.VideoItem
 
 	// Mode Toggles & Action Buttons (matching Sidebar.vue)
-	btnModeVR       widget.Clickable
-	btnModePortrait widget.Clickable
-	btnOpenFolder   widget.Clickable
-	btnPickFiles    widget.Clickable
-	btnDemoSample   widget.Clickable
+	btnModeVR          widget.Clickable
+	btnModePortrait    widget.Clickable
+	btnOpenFolder      widget.Clickable
+	btnPickFiles       widget.Clickable
+	btnDemoSample      widget.Clickable
+	btnGrantPermission widget.Clickable
+	btnAppSettings     widget.Clickable
 
 	// Search & Sorting
 	searchEditor  widget.Editor
@@ -112,6 +114,11 @@ func (ex *Explorer) Layout(gtx layout.Context, th *material.Theme, state *appsta
 					return ex.layoutHeader(gtx, th, state)
 				}),
 
+				// Storage Permission Banner
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return ex.layoutPermissionBanner(gtx, th)
+				}),
+
 				// Storage Actions Strip (Open Folder, Demo Sample)
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return ex.layoutStorageActions(gtx, th)
@@ -158,7 +165,18 @@ func (ex *Explorer) handleEvents(gtx layout.Context, state *appstate.AppState) {
 		state.ViewMode = appstate.ViewModeFlat
 	}
 
+	if ex.btnGrantPermission.Clicked(gtx) {
+		storage.RequestStoragePermission()
+	}
+
+	if ex.btnAppSettings.Clicked(gtx) {
+		storage.OpenAppSettings()
+	}
+
 	if ex.btnOpenFolder.Clicked(gtx) || ex.btnRescan.Clicked(gtx) {
+		if !storage.HasStoragePermission() {
+			storage.RequestStoragePermission()
+		}
 		videos := storage.ScanDefaultStorageLocations()
 		ex.SetVideos(videos)
 	}
@@ -309,12 +327,127 @@ func (ex *Explorer) layoutStorageActions(gtx layout.Context, th *material.Theme)
 	})
 }
 
+func (ex *Explorer) layoutPermissionBanner(gtx layout.Context, th *material.Theme) layout.Dimensions {
+	if storage.HasStoragePermission() {
+		return layout.Dimensions{}
+	}
+	return layout.Inset{
+		Bottom: unit.Dp(10),
+		Left:   unit.Dp(16),
+		Right:  unit.Dp(16),
+	}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.Background{}.Layout(gtx,
+			func(gtx layout.Context) layout.Dimensions {
+				sz := gtx.Constraints.Min
+				defer clip.RRect{
+					Rect: image.Rectangle{Max: sz},
+					NE:   8, NW: 8, SE: 8, SW: 8,
+				}.Push(gtx.Ops).Pop()
+				paint.Fill(gtx.Ops, color.NRGBA{R: 245, G: 158, B: 11, A: 35})
+				return layout.Dimensions{Size: sz}
+			},
+			func(gtx layout.Context) layout.Dimensions {
+				return layout.UniformInset(unit.Dp(10)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							lbl := material.Caption(th, "Storage permission is needed to browse device videos.")
+							lbl.Color = color.NRGBA{R: 251, G: 191, B: 36, A: 255}
+							return lbl.Layout(gtx)
+						}),
+						layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+								layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+									btn := material.Button(th, &ex.btnGrantPermission, "Allow Access")
+									btn.Background = ColorPrimary
+									btn.Inset = layout.UniformInset(unit.Dp(6))
+									return btn.Layout(gtx)
+								}),
+								layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
+								layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+									btn := material.Button(th, &ex.btnAppSettings, "Settings")
+									btn.Background = ColorSurfaceLight
+									btn.Inset = layout.UniformInset(unit.Dp(6))
+									return btn.Layout(gtx)
+								}),
+							)
+						}),
+					)
+				})
+			},
+		)
+	})
+}
+
+func (ex *Explorer) layoutEmptyState(gtx layout.Context, th *material.Theme) layout.Dimensions {
+	hasPerm := storage.HasStoragePermission()
+	return layout.Inset{
+		Top:    unit.Dp(32),
+		Bottom: unit.Dp(32),
+		Left:   unit.Dp(24),
+		Right:  unit.Dp(24),
+	}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle}.Layout(gtx,
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Bottom: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return AppIcons.Folder.Layout(gtx, ColorPrimary)
+				})
+			}),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				title := "Storage Access Required"
+				if hasPerm {
+					title = "No Local Videos Found"
+				}
+				lbl := material.H6(th, title)
+				lbl.Color = ColorTextPrimary
+				return lbl.Layout(gtx)
+			}),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				desc := "VR Player needs permission to scan your Movies, Download, and VR folders."
+				if hasPerm {
+					desc = "No video files found in Movies, Download, DCIM, Videos, or VR folders."
+				}
+				lbl := material.Body2(th, desc)
+				lbl.Color = ColorTextSecondary
+				return layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(24)}.Layout(gtx, lbl.Layout)
+			}),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				if !hasPerm {
+					return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							btn := material.Button(th, &ex.btnGrantPermission, "Allow Video Access")
+							btn.Background = ColorPrimary
+							btn.Inset = layout.UniformInset(unit.Dp(10))
+							return btn.Layout(gtx)
+						}),
+						layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							btn := material.Button(th, &ex.btnAppSettings, "Open App Settings")
+							btn.Background = ColorSurfaceLight
+							btn.Inset = layout.UniformInset(unit.Dp(10))
+							return btn.Layout(gtx)
+						}),
+					)
+				}
+				btn := material.Button(th, &ex.btnRescan, "Rescan Storage")
+				btn.Background = ColorPrimary
+				btn.Inset = layout.UniformInset(unit.Dp(10))
+				return btn.Layout(gtx)
+			}),
+		)
+	})
+}
+
 func (ex *Explorer) layoutFolderList(gtx layout.Context, th *material.Theme) layout.Dimensions {
 	var folderNames []string
 	for name := range ex.folders {
 		folderNames = append(folderNames, name)
 	}
 	sort.Strings(folderNames)
+
+	if len(folderNames) == 0 {
+		return ex.layoutEmptyState(gtx, th)
+	}
 
 	if len(ex.folderClicks) < len(folderNames) {
 		ex.folderClicks = make([]widget.Clickable, len(folderNames))
