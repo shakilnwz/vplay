@@ -10,6 +10,7 @@ package sensor
 #include <stdlib.h>
 #include <stdbool.h>
 #include <math.h>
+#include <dlfcn.h>
 
 typedef struct {
     ASensorManager* sm;
@@ -25,7 +26,15 @@ static SensorContext* initSensor() {
         return NULL;
     }
 
-    ASensorManager* sm = ASensorManager_getInstance();
+    ASensorManager* sm = NULL;
+    typedef ASensorManager* (*pfnGetForPackage)(const char*);
+    pfnGetForPackage getForPkg = (pfnGetForPackage)dlsym(RTLD_DEFAULT, "ASensorManager_getInstanceForPackage");
+    if (getForPkg) {
+        sm = getForPkg("com.lerd.vrplayer");
+    }
+    if (!sm) {
+        sm = ASensorManager_getInstance();
+    }
     if (!sm) {
         return NULL;
     }

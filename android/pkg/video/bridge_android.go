@@ -71,6 +71,10 @@ static bool updateSurfaceTexture(JavaVM* vm, jobject st, float* outMtx) {
     jmethodID updateTex = (*env)->GetMethodID(env, stClass, "updateTexImage", "()V");
     if (!updateTex) return false;
     (*env)->CallVoidMethod(env, st, updateTex);
+    if ((*env)->ExceptionCheck(env)) {
+        (*env)->ExceptionClear(env);
+        return false;
+    }
 
     if (outMtx) {
         jmethodID getTransform = (*env)->GetMethodID(env, stClass, "getTransformMatrix", "([F)V");
@@ -82,6 +86,41 @@ static bool updateSurfaceTexture(JavaVM* vm, jobject st, float* outMtx) {
         }
     }
     return true;
+}
+
+// stSetDefaultBufferSize sets buffer size on SurfaceTexture
+static void stSetDefaultBufferSize(JavaVM* vm, jobject st, int width, int height) {
+    JNIEnv* env = getJNIEnv(vm);
+    if (!env || !st || width <= 0 || height <= 0) return;
+    jclass stClass = (*env)->GetObjectClass(env, st);
+    jmethodID setBuf = (*env)->GetMethodID(env, stClass, "setDefaultBufferSize", "(II)V");
+    if (setBuf) (*env)->CallVoidMethod(env, st, setBuf, (jint)width, (jint)height);
+    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+}
+
+// mpRelease releases MediaPlayer and surface resources
+static void mpRelease(JavaVM* vm, jobject mp, jobject surface, jobject surfaceTex) {
+    JNIEnv* env = getJNIEnv(vm);
+    if (!env) return;
+
+    if (mp) {
+        jclass mpClass = (*env)->GetObjectClass(env, mp);
+        jmethodID rel = (*env)->GetMethodID(env, mpClass, "release", "()V");
+        if (rel) (*env)->CallVoidMethod(env, mp, rel);
+        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    }
+    if (surface) {
+        jclass surfClass = (*env)->GetObjectClass(env, surface);
+        jmethodID rel = (*env)->GetMethodID(env, surfClass, "release", "()V");
+        if (rel) (*env)->CallVoidMethod(env, surface, rel);
+        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    }
+    if (surfaceTex) {
+        jclass stClass = (*env)->GetObjectClass(env, surfaceTex);
+        jmethodID rel = (*env)->GetMethodID(env, stClass, "release", "()V");
+        if (rel) (*env)->CallVoidMethod(env, surfaceTex, rel);
+        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    }
 }
 
 // createMediaPlayer initializes an Android MediaPlayer bound to the Surface
@@ -137,6 +176,53 @@ static bool mpSetDataSourceURI(JavaVM* vm, jobject mp, jobject surface, const ch
     jstring jUri = (*env)->NewStringUTF(env, uriStr);
     (*env)->CallVoidMethod(env, mp, setDS, jUri);
     (*env)->DeleteLocalRef(env, jUri);
+    if ((*env)->ExceptionCheck(env)) {
+        (*env)->ExceptionDescribe(env);
+        (*env)->ExceptionClear(env);
+        return false;
+    }
+
+    jmethodID prepare = (*env)->GetMethodID(env, mpClass, "prepare", "()V");
+    if (prepare) {
+        (*env)->CallVoidMethod(env, mp, prepare);
+        if ((*env)->ExceptionCheck(env)) {
+            (*env)->ExceptionDescribe(env);
+            (*env)->ExceptionClear(env);
+            return false;
+        }
+    }
+    return true;
+}
+
+// mpSetDataSourceFD sets media data source from FileDescriptor
+static bool mpSetDataSourceFD(JavaVM* vm, jobject mp, jobject surface, int fd, long long offset, long long length) {
+    JNIEnv* env = getJNIEnv(vm);
+    if (!env || !mp || fd < 0) return false;
+
+    mpReset(vm, mp);
+
+    jclass mpClass = (*env)->GetObjectClass(env, mp);
+    if (surface) {
+        jmethodID setSurface = (*env)->GetMethodID(env, mpClass, "setSurface", "(Landroid/view/Surface;)V");
+        if (setSurface) (*env)->CallVoidMethod(env, mp, setSurface, surface);
+    }
+
+    jclass pfdClass = (*env)->FindClass(env, "android/os/ParcelFileDescriptor");
+    if (!pfdClass) return false;
+    jmethodID adopt = (*env)->GetStaticMethodID(env, pfdClass, "adoptFd", "(I)Landroid/os/ParcelFileDescriptor;");
+    if (!adopt) return false;
+    jobject pfd = (*env)->CallStaticObjectMethod(env, pfdClass, adopt, (jint)fd);
+    if (!pfd) return false;
+
+    jmethodID getFD = (*env)->GetMethodID(env, pfdClass, "getFileDescriptor", "()Ljava/io/FileDescriptor;");
+    if (!getFD) return false;
+    jobject jfd = (*env)->CallObjectMethod(env, pfd, getFD);
+    if (!jfd) return false;
+
+    jmethodID setDS = (*env)->GetMethodID(env, mpClass, "setDataSource", "(Ljava/io/FileDescriptor;JJ)V");
+    if (setDS) {
+        (*env)->CallVoidMethod(env, mp, setDS, jfd, (jlong)offset, (jlong)length);
+    }
     if ((*env)->ExceptionCheck(env)) {
         (*env)->ExceptionDescribe(env);
         (*env)->ExceptionClear(env);
@@ -350,19 +436,43 @@ func (p *AndroidPlayer) OpenURI(uri string) error {
 	C.mpGetDimensions(p.vm, p.mediaPlayer, &w, &h)
 	p.width = int(w)
 	p.height = int(h)
+	if p.width > 0 && p.height > 0 {
+		C.stSetDefaultBufferSize(p.vm, p.surfaceTex, C.int(p.width), C.int(p.height))
+	}
 
 	p.state = StatePaused
 	return nil
 }
 
 func (p *AndroidPlayer) OpenFD(fd uintptr, offset, length int64) error {
-	// For file descriptors, can construct URI "fd://..." or use setDataSource(fd, offset, length)
-	return p.OpenURI("")
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if !bool(C.mpSetDataSourceFD(p.vm, p.mediaPlayer, p.surface, C.int(fd), C.longlong(offset), C.longlong(length))) {
+		p.state = StateError
+		return errors.New("failed to set data source for FileDescriptor")
+	}
+
+	durMS := int(C.mpGetDuration(p.vm, p.mediaPlayer))
+	p.duration = time.Duration(durMS) * time.Millisecond
+
+	var w, h C.int
+	C.mpGetDimensions(p.vm, p.mediaPlayer, &w, &h)
+	p.width = int(w)
+	p.height = int(h)
+	if p.width > 0 && p.height > 0 {
+		C.stSetDefaultBufferSize(p.vm, p.surfaceTex, C.int(p.width), C.int(p.height))
+	}
+
+	p.state = StatePaused
+	return nil
 }
 
 func (p *AndroidPlayer) Release() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+
+	C.mpRelease(p.vm, p.mediaPlayer, p.surface, p.surfaceTex)
 
 	if !bool(C.isNullJObject(p.mediaPlayer)) {
 		C.releaseGlobalRef(p.vm, p.mediaPlayer)
