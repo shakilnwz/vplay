@@ -49,7 +49,7 @@ fi
     "${ARCH_ARG[@]}" \
     "${KEYSTORE_ARG[@]}" \
     -minsdk 24 \
-    -targetsdk 32 \
+    -targetsdk 34 \
     -o "$OUT" \
     ./cmd/vrplayer
 
