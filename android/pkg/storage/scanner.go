@@ -133,7 +133,11 @@ func GroupVideosByFolder(videos []appstate.VideoItem) map[string][]appstate.Vide
 	folders := make(map[string][]appstate.VideoItem)
 	for _, v := range videos {
 		dir := filepath.Dir(v.Path)
-		folderName := filepath.Base(dir)
+		canonicalDir, err := filepath.EvalSymlinks(dir)
+		if err != nil {
+			canonicalDir = dir
+		}
+		folderName := filepath.Base(canonicalDir)
 		if folderName == "" || folderName == "." {
 			folderName = "Internal Storage"
 		}

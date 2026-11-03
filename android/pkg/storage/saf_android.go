@@ -57,15 +57,8 @@ func ScanDirectory(dirPath string) ([]appstate.VideoItem, error) {
 // ScanDefaultStorageLocations scans standard media folders on Android.
 func ScanDefaultStorageLocations() []appstate.VideoItem {
 	locations := []string{
-		"/sdcard/Movies",
-		"/sdcard/Download",
-		"/sdcard/DCIM/Camera",
-		"/sdcard/DCIM",
-		"/sdcard/Videos",
-		"/sdcard/VR",
 		"/storage/emulated/0/Movies",
 		"/storage/emulated/0/Download",
-		"/storage/emulated/0/DCIM/Camera",
 		"/storage/emulated/0/DCIM",
 		"/storage/emulated/0/Videos",
 		"/storage/emulated/0/VR",
@@ -77,8 +70,12 @@ func ScanDefaultStorageLocations() []appstate.VideoItem {
 	for _, loc := range locations {
 		if items, err := ScanDirectory(loc); err == nil {
 			for _, item := range items {
-				if !seen[item.Path] {
-					seen[item.Path] = true
+				canonicalPath, err := filepath.EvalSymlinks(item.Path)
+				if err != nil {
+					canonicalPath = item.Path
+				}
+				if !seen[canonicalPath] {
+					seen[canonicalPath] = true
 					allVideos = append(allVideos, item)
 				}
 			}
