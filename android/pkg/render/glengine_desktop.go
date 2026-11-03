@@ -27,7 +27,12 @@ func (e *GLEngine) InitGL(vertSrc, fragSrc string) error {
 }
 
 // Render draws the specified projection mesh with current stereoscopic parameters.
-func (e *GLEngine) Render(viewMode, stereoMode string, invertStereo bool, mvp Mat4) {
+func (e *GLEngine) Render(viewMode, stereoMode string, invertStereo bool, mvp Mat4, stMatrix [16]float32) {
+	// No-op for desktop mock
+}
+
+// UpdatePlaneMesh updates flat plane aspect ratio.
+func (e *GLEngine) UpdatePlaneMesh(videoAspect, screenAspect, fovRad float32, mode string) {
 	// No-op for desktop mock
 }
 

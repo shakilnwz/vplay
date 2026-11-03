@@ -109,8 +109,8 @@ static void uploadMesh(const float* verts, int vertFloats, const uint16_t* indic
 }
 
 static void drawMesh(GLuint program, GLuint vao, int indexCount, GLuint texId, const float* mvp,
-                     float isSBS, float sbsFormat, float invertStereo,
-                     GLint uMVP, GLint uTex, GLint uSBS, GLint uFormat, GLint uInvert) {
+                     float isSBS, float sbsFormat, float invertStereo, const float* stMatrix,
+                     GLint uMVP, GLint uTex, GLint uSBS, GLint uFormat, GLint uInvert, GLint uSTMatrix) {
     glUseProgram(program);
 
     // Bind external OES video texture to unit 0
@@ -120,6 +120,9 @@ static void drawMesh(GLuint program, GLuint vao, int indexCount, GLuint texId, c
 
     // Set uniforms
     glUniformMatrix4fv(uMVP, 1, GL_FALSE, mvp);
+    if (uSTMatrix >= 0 && stMatrix != NULL) {
+        glUniformMatrix4fv(uSTMatrix, 1, GL_FALSE, stMatrix);
+    }
     glUniform1f(uSBS, isSBS);
     glUniform1f(uFormat, sbsFormat);
     glUniform1f(uInvert, invertStereo);
@@ -152,15 +155,17 @@ type GLEngine struct {
 	program       C.GLuint
 
 	// Uniform locations
-	uMVP    C.GLint
-	uTex    C.GLint
-	uSBS    C.GLint
-	uFormat C.GLint
-	uInvert C.GLint
+	uMVP      C.GLint
+	uTex      C.GLint
+	uSBS      C.GLint
+	uFormat   C.GLint
+	uInvert   C.GLint
+	uSTMatrix C.GLint
 
 	// Geometry buffers
 	sphereBuf GLESBuffer
 	domeBuf   GLESBuffer
+	curvedBuf GLESBuffer
 	planeBuf  GLESBuffer
 }
 
@@ -192,31 +197,41 @@ func (e *GLEngine) InitGL(vertSrc, fragSrc string) error {
 	defer C.free(unsafe.Pointer(cFormat))
 	cInvert := C.CString("uInvertStereo")
 	defer C.free(unsafe.Pointer(cInvert))
+	cSTMatrix := C.CString("uSTMatrix")
+	defer C.free(unsafe.Pointer(cSTMatrix))
 
 	e.uMVP = C.glGetUniformLocation(e.program, cMVP)
 	e.uTex = C.glGetUniformLocation(e.program, cTex)
 	e.uSBS = C.glGetUniformLocation(e.program, cSBS)
 	e.uFormat = C.glGetUniformLocation(e.program, cFormat)
 	e.uInvert = C.glGetUniformLocation(e.program, cInvert)
+	e.uSTMatrix = C.glGetUniformLocation(e.program, cSTMatrix)
 
 	// Create OES external texture ID
 	e.ExternalTexID = uint32(C.createExternalTexture())
 
-	// 1. Upload 360 Sphere
-	sphereMesh := GenerateSphere(50.0, 32, 64)
+	// 1. Upload 360 Sphere (64 rings x 128 sectors for 1:1 4K/8K quality)
+	sphereMesh := GenerateSphere(50.0, 64, 128)
 	e.sphereBuf.indexCount = C.int(len(sphereMesh.Indices))
 	C.uploadMesh((*C.float)(&sphereMesh.Vertices[0]), C.int(len(sphereMesh.Vertices)),
 		(*C.uint16_t)(&sphereMesh.Indices[0]), e.sphereBuf.indexCount,
 		&e.sphereBuf.vao, &e.sphereBuf.vbo, &e.sphereBuf.ebo)
 
-	// 2. Upload 180 Dome
-	domeMesh := GenerateDome(50.0, 32, 64)
+	// 2. Upload 180 Dome (64 rings x 128 sectors)
+	domeMesh := GenerateDome(50.0, 64, 128)
 	e.domeBuf.indexCount = C.int(len(domeMesh.Indices))
 	C.uploadMesh((*C.float)(&domeMesh.Vertices[0]), C.int(len(domeMesh.Vertices)),
 		(*C.uint16_t)(&domeMesh.Indices[0]), e.domeBuf.indexCount,
 		&e.domeBuf.vao, &e.domeBuf.vbo, &e.domeBuf.ebo)
 
-	// 3. Upload Flat Plane
+	// 3. Upload Curved Cinema mesh (64 rings x 128 sectors)
+	curvedMesh := GenerateCurvedCinema(50.0, 64, 128)
+	e.curvedBuf.indexCount = C.int(len(curvedMesh.Indices))
+	C.uploadMesh((*C.float)(&curvedMesh.Vertices[0]), C.int(len(curvedMesh.Vertices)),
+		(*C.uint16_t)(&curvedMesh.Indices[0]), e.curvedBuf.indexCount,
+		&e.curvedBuf.vao, &e.curvedBuf.vbo, &e.curvedBuf.ebo)
+
+	// 4. Upload Default Flat Plane
 	planeMesh := GeneratePlane(16.0 / 9.0)
 	e.planeBuf.indexCount = C.int(len(planeMesh.Indices))
 	C.uploadMesh((*C.float)(&planeMesh.Vertices[0]), C.int(len(planeMesh.Vertices)),
@@ -226,8 +241,23 @@ func (e *GLEngine) InitGL(vertSrc, fragSrc string) error {
 	return nil
 }
 
+// UpdatePlaneMesh regenerates the flat plane quad matching video aspect ratio and viewport.
+func (e *GLEngine) UpdatePlaneMesh(videoAspect, screenAspect, fovRad float32, mode string) {
+	planeMesh := GeneratePlaneWithAspect(videoAspect, screenAspect, fovRad, mode)
+	if e.planeBuf.vao != 0 {
+		C.glDeleteVertexArrays(1, &e.planeBuf.vao)
+		C.glDeleteBuffers(1, &e.planeBuf.vbo)
+		C.glDeleteBuffers(1, &e.planeBuf.ebo)
+		e.planeBuf.vao = 0
+	}
+	e.planeBuf.indexCount = C.int(len(planeMesh.Indices))
+	C.uploadMesh((*C.float)(&planeMesh.Vertices[0]), C.int(len(planeMesh.Vertices)),
+		(*C.uint16_t)(&planeMesh.Indices[0]), e.planeBuf.indexCount,
+		&e.planeBuf.vao, &e.planeBuf.vbo, &e.planeBuf.ebo)
+}
+
 // Render draws the chosen projection geometry using the external video texture.
-func (e *GLEngine) Render(viewMode, stereoMode string, invertStereo bool, mvp Mat4) {
+func (e *GLEngine) Render(viewMode, stereoMode string, invertStereo bool, mvp Mat4, stMatrix [16]float32) {
 	if e.program == 0 {
 		return
 	}
@@ -249,19 +279,47 @@ func (e *GLEngine) Render(viewMode, stereoMode string, invertStereo bool, mvp Ma
 	}
 
 	targetBuf := e.sphereBuf
-	if viewMode == "180" {
+	switch viewMode {
+	case "180":
 		targetBuf = e.domeBuf
-	} else if viewMode == "flat" {
+	case "curved":
+		targetBuf = e.curvedBuf
+	case "flat":
 		targetBuf = e.planeBuf
 	}
 
 	C.drawMesh(e.program, targetBuf.vao, targetBuf.indexCount, C.GLuint(e.ExternalTexID),
-		(*C.float)(&mvp[0]), C.float(isSBS), C.float(sbsFormat), C.float(invert),
-		e.uMVP, e.uTex, e.uSBS, e.uFormat, e.uInvert)
+		(*C.float)(&mvp[0]), C.float(isSBS), C.float(sbsFormat), C.float(invert), (*C.float)(&stMatrix[0]),
+		e.uMVP, e.uTex, e.uSBS, e.uFormat, e.uInvert, e.uSTMatrix)
 }
 
 // Release frees shader program and geometry buffers.
 func (e *GLEngine) Release() {
+	if e.sphereBuf.vao != 0 {
+		C.glDeleteVertexArrays(1, &e.sphereBuf.vao)
+		C.glDeleteBuffers(1, &e.sphereBuf.vbo)
+		C.glDeleteBuffers(1, &e.sphereBuf.ebo)
+	}
+	if e.domeBuf.vao != 0 {
+		C.glDeleteVertexArrays(1, &e.domeBuf.vao)
+		C.glDeleteBuffers(1, &e.domeBuf.vbo)
+		C.glDeleteBuffers(1, &e.domeBuf.ebo)
+	}
+	if e.curvedBuf.vao != 0 {
+		C.glDeleteVertexArrays(1, &e.curvedBuf.vao)
+		C.glDeleteBuffers(1, &e.curvedBuf.vbo)
+		C.glDeleteBuffers(1, &e.curvedBuf.ebo)
+	}
+	if e.planeBuf.vao != 0 {
+		C.glDeleteVertexArrays(1, &e.planeBuf.vao)
+		C.glDeleteBuffers(1, &e.planeBuf.vbo)
+		C.glDeleteBuffers(1, &e.planeBuf.ebo)
+	}
+	if e.ExternalTexID != 0 {
+		tex := C.GLuint(e.ExternalTexID)
+		C.glDeleteTextures(1, &tex)
+		e.ExternalTexID = 0
+	}
 	if e.program != 0 {
 		C.glDeleteProgram(e.program)
 		e.program = 0

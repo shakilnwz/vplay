@@ -32,6 +32,9 @@ func runEventLoop(w *app.Window, playerUI *ui.App, state *appstate.AppState, bac
 		switch e := w.Event().(type) {
 		case app.AndroidViewEvent:
 			if !e.Valid() {
+				if state.IsPlaying && backendRef != nil && *backendRef != nil {
+					_ = (*backendRef).Pause()
+				}
 				if eglCtx != nil {
 					eglCtx.Release()
 					eglCtx = nil
@@ -111,7 +114,6 @@ func runEventLoop(w *app.Window, playerUI *ui.App, state *appstate.AppState, bac
 					roll := float32(0.0)
 
 					rot := render.RotationEuler(yaw, pitch, roll)
-					mvp := render.Multiply(proj, rot)
 
 					viewModeStr := string(state.ViewMode)
 					if viewModeStr == "" {
@@ -122,7 +124,23 @@ func runEventLoop(w *app.Window, playerUI *ui.App, state *appstate.AppState, bac
 						stereoModeStr = "horizontal"
 					}
 
-					glEngine.Render(viewModeStr, stereoModeStr, state.InvertStereo, mvp)
+					if state.GyroEnabled && tracker != nil && (viewModeStr == "360" || viewModeStr == "180" || viewModeStr == "curved") {
+						gyroMat := tracker.GetOrientationMatrix()
+						rot = render.Multiply(rot, gyroMat)
+					}
+					mvp := render.Multiply(proj, rot)
+
+					if viewModeStr == "flat" {
+						vW, vH := bp.VideoDimensions()
+						vAspect := float32(16.0 / 9.0)
+						if vW > 0 && vH > 0 {
+							vAspect = float32(vW) / float32(vH)
+						}
+						glEngine.UpdatePlaneMesh(vAspect, aspect, fovRad, string(state.AspectRatio))
+					}
+
+					stMatrix := bp.TextureTransform()
+					glEngine.Render(viewModeStr, stereoModeStr, state.InvertStereo, mvp, stMatrix)
 				}
 
 				gtx := app.NewContext(&ops, e)
