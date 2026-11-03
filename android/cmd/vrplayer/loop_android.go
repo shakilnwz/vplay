@@ -36,14 +36,6 @@ func runEventLoop(w *app.Window, playerUI *ui.App, state *appstate.AppState, bac
 				if state.IsPlaying && backendRef != nil && *backendRef != nil {
 					_ = (*backendRef).Pause()
 				}
-				if eglCtx != nil {
-					eglCtx.Release()
-					eglCtx = nil
-				}
-				if glEngine != nil {
-					glEngine.Release()
-					glEngine = nil
-				}
 				currentView = 0
 				storage.SetAndroidView(0)
 			} else {
@@ -65,8 +57,9 @@ func runEventLoop(w *app.Window, playerUI *ui.App, state *appstate.AppState, bac
 
 		case app.FrameEvent:
 			size = e.Size
+			jvmPtr := app.JavaVM()
+
 			if eglCtx == nil && currentView != 0 && size.X > 0 && size.Y > 0 {
-				jvmPtr := app.JavaVM()
 				var err error
 				eglCtx, err = render.NewEGLContext(jvmPtr, currentView)
 				if err != nil {
@@ -95,6 +88,16 @@ func runEventLoop(w *app.Window, playerUI *ui.App, state *appstate.AppState, bac
 							}
 						}
 					}
+				}
+			}
+
+			// Validate and rebind native window surface if screen changed / minimized / maximized
+			if eglCtx != nil && currentView != 0 {
+				if !eglCtx.EnsureSurface(jvmPtr, currentView) {
+					gtx := app.NewContext(&ops, e)
+					playerUI.Layout(gtx)
+					e.Frame(gtx.Ops)
+					continue
 				}
 			}
 

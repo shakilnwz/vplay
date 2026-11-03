@@ -189,8 +189,114 @@ static bool makeCurrentEGL(NativeEGL* e) {
 }
 
 static bool swapBuffersEGL(NativeEGL* e) {
-    if (!e) return false;
-    return eglSwapBuffers(e->disp, e->surf) == EGL_TRUE;
+    if (!e || e->surf == EGL_NO_SURFACE) return false;
+    EGLBoolean ok = eglSwapBuffers(e->disp, e->surf);
+    if (!ok) {
+        EGLint err = eglGetError();
+        LOGE("eglSwapBuffers failed: 0x%x", err);
+        if (err == EGL_BAD_SURFACE || err == EGL_BAD_NATIVE_WINDOW) {
+            eglDestroySurface(e->disp, e->surf);
+            e->surf = EGL_NO_SURFACE;
+        }
+        return false;
+    }
+    return true;
+}
+
+static bool ensureSurfaceEGL(JavaVM* vm, jobject gioView, NativeEGL* e) {
+    if (!e || !vm || !gioView) return false;
+
+    JNIEnv* env = NULL;
+    if ((*vm)->GetEnv(vm, (void**)&env, JNI_VERSION_1_6) != JNI_OK) {
+        if ((*vm)->AttachCurrentThread(vm, &env, NULL) != JNI_OK) {
+            return false;
+        }
+    }
+
+    jclass surfViewClass = (*env)->FindClass(env, "android/view/SurfaceView");
+    if (!surfViewClass) {
+        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        return false;
+    }
+    jmethodID getHolder = (*env)->GetMethodID(env, surfViewClass, "getHolder", "()Landroid/view/SurfaceHolder;");
+    if (!getHolder) {
+        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        return false;
+    }
+    jobject holder = (*env)->CallObjectMethod(env, gioView, getHolder);
+    if (!holder) return false;
+
+    jclass holderClass = (*env)->FindClass(env, "android/view/SurfaceHolder");
+    if (!holderClass) {
+        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        (*env)->DeleteLocalRef(env, holder);
+        return false;
+    }
+    jmethodID getSurface = (*env)->GetMethodID(env, holderClass, "getSurface", "()Landroid/view/Surface;");
+    if (!getSurface) {
+        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        (*env)->DeleteLocalRef(env, holder);
+        return false;
+    }
+    jobject surface = (*env)->CallObjectMethod(env, holder, getSurface);
+    (*env)->DeleteLocalRef(env, holder);
+    if (!surface) return false;
+
+    jclass surfClass = (*env)->FindClass(env, "android/view/Surface");
+    if (!surfClass) {
+        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        (*env)->DeleteLocalRef(env, surface);
+        return false;
+    }
+    jmethodID isValidMethod = (*env)->GetMethodID(env, surfClass, "isValid", "()Z");
+    if (!isValidMethod) {
+        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        (*env)->DeleteLocalRef(env, surface);
+        return false;
+    }
+    jboolean isValid = (*env)->CallBooleanMethod(env, surface, isValidMethod);
+    if (!isValid) {
+        (*env)->DeleteLocalRef(env, surface);
+        return false;
+    }
+
+    ANativeWindow* currentWin = ANativeWindow_fromSurface(env, surface);
+    (*env)->DeleteLocalRef(env, surface);
+    if (!currentWin) return false;
+
+    if (e->win != currentWin || e->surf == EGL_NO_SURFACE) {
+        LOGI("Recreating EGL surface for new ANativeWindow (old win: %p, new win: %p)", e->win, currentWin);
+
+        if (e->disp != EGL_NO_DISPLAY && e->surf != EGL_NO_SURFACE) {
+            eglMakeCurrent(e->disp, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+            eglDestroySurface(e->disp, e->surf);
+            e->surf = EGL_NO_SURFACE;
+        }
+        if (e->win) {
+            ANativeWindow_release(e->win);
+            e->win = NULL;
+        }
+
+        e->win = currentWin;
+        EGLint format = 0;
+        eglGetConfigAttrib(e->disp, e->cfg, EGL_NATIVE_VISUAL_ID, &format);
+        ANativeWindow_setBuffersGeometry(e->win, 0, 0, format);
+
+        e->surf = eglCreateWindowSurface(e->disp, e->cfg, (EGLNativeWindowType)e->win, NULL);
+        if (e->surf == EGL_NO_SURFACE) {
+            LOGE("Failed to recreate EGL window surface: 0x%x", eglGetError());
+            return false;
+        }
+
+        if (!eglMakeCurrent(e->disp, e->surf, e->surf, e->ctx)) {
+            LOGE("Failed to make recreated surface current: 0x%x", eglGetError());
+            return false;
+        }
+    } else {
+        ANativeWindow_release(currentWin);
+    }
+
+    return (e->surf != EGL_NO_SURFACE);
 }
 
 static void releaseEGL(NativeEGL* e) {
@@ -276,6 +382,15 @@ func (c *EGLContext) RenderUI(ops *op.Ops, size image.Point) error {
 		return errors.New("gioGPU is nil")
 	}
 	return c.gioGPU.Frame(ops, gpu.OpenGLRenderTarget{}, size)
+}
+
+// EnsureSurface checks if the Android Surface has changed (e.g. app minimize/maximize)
+// and rebinds the EGLSurface smoothly without destroying the EGL context or shaders.
+func (c *EGLContext) EnsureSurface(jvmPtr uintptr, viewPtr uintptr) bool {
+	if c == nil || c.native == nil || jvmPtr == 0 || viewPtr == 0 {
+		return false
+	}
+	return bool(C.ensureSurfaceEGL((*C.JavaVM)(unsafe.Pointer(jvmPtr)), (C.jobject)(unsafe.Pointer(viewPtr)), c.native))
 }
 
 // SwapBuffers presents the completed frame to the display.
